@@ -1,0 +1,2293 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  ResponsiveContainer,
+} from "recharts";
+import {
+  Search,
+  ChevronDown,
+  ChevronRight,
+  CheckCircle2,
+  Circle,
+  Trophy,
+  Flame,
+  BookOpen,
+  Lightbulb,
+  Network,
+  Code2,
+  AlertCircle,
+  HelpCircle,
+  Sparkles,
+  Sun,
+  Moon,
+  LogOut,
+  Copy,
+  Check,
+  Clock,
+  X,
+  Maximize2,
+  Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  TrendingUp,
+  Star,
+  ChevronsRight,
+  GripVertical,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  topics,
+  sections,
+  type Topic,
+  type Question,
+  type CodeExample,
+  type Subtopic,
+} from "@/lib/topics";
+
+// ============================================================
+// Sharded server sync (Firebase via /api/progress)
+// ============================================================
+type TabKey = "overview" | "explanation" | "diagram" | "analogy" | "code" | "quiz";
+
+type QuizState = {
+  [topicId: string]: {
+    [qIndex: number]: { selected: "A" | "B" | "C" | "D"; correct: boolean };
+  };
+};
+
+type AppState = {
+  visited: Record<string, boolean>;
+  quiz: QuizState;
+  loginDates: string[];
+  expanded: Record<string, boolean>;
+  selectedTopicId: string;
+  leftCollapsed: boolean;
+  rightCollapsed: boolean;
+  tabOrder: TabKey[];
+  openTabs: TabKey[];
+  collapsedPanels: TabKey[];
+  topicTime: Record<string, number>; // accumulated ms per topic
+  topicDone: Record<string, boolean>;
+  tabsDone: Record<string, Partial<Record<TabKey, boolean>>>;
+};
+
+type SectionKey = "profile" | "progress" | "quiz" | "ui";
+
+type SessionUser = { username: string; displayName: string };
+
+const DEFAULT_TAB_ORDER: TabKey[] = [
+  "overview",
+  "explanation",
+  "diagram",
+  "analogy",
+  "code",
+  "quiz",
+];
+
+function defaultState(): AppState {
+  return {
+    visited: {},
+    quiz: {},
+    loginDates: [],
+    expanded: { [sections[0]?.id ?? ""]: true },
+    selectedTopicId: topics[0]?.id ?? "",
+    leftCollapsed: false,
+    rightCollapsed: false,
+    tabOrder: DEFAULT_TAB_ORDER,
+    openTabs: DEFAULT_TAB_ORDER,
+    collapsedPanels: [],
+    topicTime: {},
+    topicDone: {},
+    tabsDone: {},
+  };
+}
+
+/**
+ * Merge the 4 server section docs into a complete AppState.
+ * Missing/empty sections fall back to defaults so the UI never crashes.
+ */
+function mergeFromSections(
+  raw: Record<string, unknown> | undefined
+): AppState {
+  const base = defaultState();
+  if (!raw) return base;
+  const profile = (raw.profile ?? {}) as Partial<AppState>;
+  const progress = (raw.progress ?? {}) as Partial<AppState> & {
+    visited?: Record<string, boolean>;
+    topicTime?: Record<string, number>;
+    selectedTopicId?: string;
+    topicDone?: Record<string, boolean>;
+    tabsDone?: Record<string, Partial<Record<TabKey, boolean>>>;
+  };
+  const quizDoc = (raw.quiz ?? {}) as { answers?: QuizState };
+  const ui = (raw.ui ?? {}) as Partial<AppState>;
+
+  return {
+    ...base,
+    loginDates: Array.isArray(profile.loginDates)
+      ? (profile.loginDates as string[])
+      : base.loginDates,
+    visited: progress.visited ?? base.visited,
+    topicTime: progress.topicTime ?? base.topicTime,
+    selectedTopicId: progress.selectedTopicId || base.selectedTopicId,
+    topicDone: progress.topicDone ?? base.topicDone,
+    tabsDone: progress.tabsDone ?? base.tabsDone,
+    quiz: quizDoc.answers ?? base.quiz,
+    expanded:
+      ui.expanded && Object.keys(ui.expanded).length
+        ? ui.expanded
+        : base.expanded,
+    leftCollapsed: ui.leftCollapsed ?? base.leftCollapsed,
+    rightCollapsed: ui.rightCollapsed ?? base.rightCollapsed,
+    tabOrder:
+      Array.isArray(ui.tabOrder) &&
+      ui.tabOrder.length === DEFAULT_TAB_ORDER.length &&
+      ui.tabOrder.every((k): k is TabKey => k in TABS) &&
+      new Set(ui.tabOrder).size === DEFAULT_TAB_ORDER.length
+        ? (ui.tabOrder as TabKey[])
+        : base.tabOrder,
+    openTabs: Array.isArray(ui.openTabs)
+      ? (ui.openTabs.filter((k): k is TabKey => k in TABS) as TabKey[])
+      : base.openTabs,
+    collapsedPanels: Array.isArray(ui.collapsedPanels)
+      ? (ui.collapsedPanels.filter((k): k is TabKey => k in TABS) as TabKey[])
+      : base.collapsedPanels,
+  };
+}
+
+/**
+ * Hook that returns a debounced section-flush function.
+ * Repeated calls within the debounce window are merged and only the final
+ * coalesced patch is PUT to /api/progress.
+ */
+function useSectionSync(section: SectionKey) {
+  const pendingRef = useRef<Record<string, unknown>>({});
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  return useCallback(
+    (patch: Record<string, unknown>, delay: number) => {
+      // Merge into the pending bucket (later writes override earlier ones).
+      Object.assign(pendingRef.current, patch);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(async () => {
+        const body = { section, patch: pendingRef.current };
+        pendingRef.current = {};
+        try {
+          await fetch("/api/progress", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            credentials: "same-origin",
+          });
+        } catch {
+          // Silent failure — UI is optimistic; next change will re-attempt.
+        }
+      }, delay);
+    },
+    [section]
+  );
+}
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function computeStreak(dates: string[]): number {
+  if (!dates.length) return 0;
+  const set = new Set(dates);
+  let streak = 0;
+  const cursor = new Date();
+  while (true) {
+    const key = cursor.toISOString().slice(0, 10);
+    if (set.has(key)) {
+      streak += 1;
+      cursor.setUTCDate(cursor.getUTCDate() - 1);
+    } else break;
+  }
+  return streak;
+}
+
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
+// ============================================================
+// Derived helpers
+// ============================================================
+function sectionProgressPct(sectionId: string, visited: Record<string, boolean>) {
+  const sec = sections.find((s) => s.id === sectionId);
+  if (!sec || !sec.topicIds.length) return 0;
+  const done = sec.topicIds.filter((id) => visited[id]).length;
+  return Math.round((done / sec.topicIds.length) * 100);
+}
+
+function topicScore(topicId: string, quiz: QuizState) {
+  const t = topics.find((x) => x.id === topicId);
+  if (!t) return { correct: 0, total: 0, answered: 0 };
+  const entries = quiz[topicId] ?? {};
+  const answered = Object.values(entries);
+  return {
+    correct: answered.filter((a) => a.correct).length,
+    answered: answered.length,
+    total: t.questions.length,
+  };
+}
+
+function globalScore(quiz: QuizState) {
+  let correct = 0;
+  let total = 0;
+  for (const t of topics) {
+    const s = topicScore(t.id, quiz);
+    correct += s.correct;
+    total += t.questions.length;
+  }
+  return { correct, total };
+}
+
+function xpFromQuiz(quiz: QuizState) {
+  let xp = 0;
+  for (const entries of Object.values(quiz))
+    for (const a of Object.values(entries)) if (a.correct) xp += 50;
+  return xp;
+}
+
+function levelFromXp(xp: number) {
+  return Math.max(1, Math.floor(xp / 250) + 1);
+}
+function nextLevelXp(level: number) {
+  return level * 250;
+}
+
+function domainStrengths(quiz: QuizState) {
+  const buckets: Record<string, { c: number; t: number }> = {};
+  for (const t of topics) {
+    if (!buckets[t.domain]) buckets[t.domain] = { c: 0, t: 0 };
+    const s = topicScore(t.id, quiz);
+    buckets[t.domain].c += s.correct;
+    buckets[t.domain].t += t.questions.length;
+  }
+  return Object.entries(buckets).map(([domain, v]) => ({
+    domain,
+    score: v.t === 0 ? 0 : Math.round((v.c / v.t) * 100),
+  }));
+}
+
+function recommendedRevisions(quiz: QuizState) {
+  return topics
+    .map((t) => {
+      const s = topicScore(t.id, quiz);
+      const pct = s.answered === 0 ? null : Math.round((s.correct / s.answered) * 100);
+      return { topic: t, pct, answered: s.answered };
+    })
+    .filter((x) => x.answered >= 2 && (x.pct ?? 100) < 80)
+    .sort((a, b) => (a.pct ?? 100) - (b.pct ?? 100))
+    .slice(0, 3);
+}
+
+// ============================================================
+// Tab metadata
+// ============================================================
+type TabMeta = {
+  key: TabKey;
+  label: string;
+  icon: LucideIcon;
+  accent: string; // tailwind text color
+  border: string; // gradient-border class
+  ring: string;   // bg tint
+};
+
+const TABS: Record<TabKey, TabMeta> = {
+  overview: {
+    key: "overview",
+    label: "Overview",
+    icon: BookOpen,
+    accent: "text-blue-400",
+    border: "gradient-border-blue",
+    ring: "bg-blue-500/10 border-blue-500/30",
+  },
+  explanation: {
+    key: "explanation",
+    label: "Explanation",
+    icon: AlertCircle,
+    accent: "text-yellow-400",
+    border: "gradient-border-yellow",
+    ring: "bg-yellow-500/10 border-yellow-500/30",
+  },
+  diagram: {
+    key: "diagram",
+    label: "Diagram",
+    icon: Network,
+    accent: "text-accent",
+    border: "gradient-border-orange",
+    ring: "bg-accent/10 border-accent/30",
+  },
+  analogy: {
+    key: "analogy",
+    label: "Analogy",
+    icon: Lightbulb,
+    accent: "text-purple-400",
+    border: "gradient-border-purple",
+    ring: "bg-purple-500/10 border-purple-500/30",
+  },
+  code: {
+    key: "code",
+    label: "Code",
+    icon: Code2,
+    accent: "text-green-400",
+    border: "gradient-border-green",
+    ring: "bg-green-500/10 border-green-500/30",
+  },
+  quiz: {
+    key: "quiz",
+    label: "Quiz",
+    icon: HelpCircle,
+    accent: "text-red-400",
+    border: "gradient-border-red",
+    ring: "bg-red-500/10 border-red-500/30",
+  },
+};
+
+// ============================================================
+// Helpers — bold-text inline parser ("**foo**")
+// ============================================================
+function renderBold(text: string, key = ""): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const re = /\*\*([^*]+)\*\*/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let i = 0;
+  while ((m = re.exec(text))) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    parts.push(
+      <strong key={`${key}-${i++}`} className="text-text-primary font-semibold">
+        {m[1]}
+      </strong>
+    );
+    last = re.lastIndex;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+// ============================================================
+// Beginner fallback: derive subtopics from plain explanation
+// ============================================================
+function deriveBeginnerStructure(topic: Topic): {
+  tldr: string;
+  subtopics: Subtopic[];
+} {
+  if (topic.tldr && topic.subtopics) {
+    return { tldr: topic.tldr, subtopics: topic.subtopics };
+  }
+  // Split explanation into sentences
+  const sentences = topic.explanation
+    .replace(/\n+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // TL;DR = first 1–2 sentences (capped at 280 chars)
+  let tldr = "";
+  for (const s of sentences) {
+    if (tldr.length + s.length + 1 > 280) break;
+    tldr = tldr ? `${tldr} ${s}` : s;
+    if (tldr.length > 140) break;
+  }
+  if (!tldr) tldr = sentences[0] ?? "";
+
+  const remaining = sentences.slice(
+    sentences.findIndex((s) => tldr.endsWith(s)) + 1
+  );
+
+  // Group remaining sentences into 2-3 subtopics (roughly even)
+  const chunks: string[][] = [[], [], []];
+  remaining.forEach((s, i) => chunks[i % 3].push(s));
+  const subtopics: Subtopic[] = chunks
+    .filter((c) => c.length > 0)
+    .slice(0, 3)
+    .map((c, i) => ({
+      heading: ["Key Concepts", "How It Works", "When to Use"][i] ?? "More",
+      bullets: c.slice(0, 6).map((text) => ({ icon: "▸", text })),
+    }));
+
+  return { tldr, subtopics };
+}
+
+// ============================================================
+// Syntax highlighter (regex-based, no external lib)
+// ============================================================
+const AWS_SERVICES = new Set([
+  "EC2","S3","IAM","Lambda","RDS","DynamoDB","VPC","ELB","ALB","NLB",
+  "CloudFront","Route 53","CloudWatch","CloudTrail","SNS","SQS","SES",
+  "ECS","EKS","ECR","Fargate","KMS","STS","ACM","WAF","Shield","Cognito",
+  "EFS","EBS","Glacier","Athena","Kinesis","Redshift","SageMaker",
+  "Bedrock","ASG","STS","Aurora","ElastiCache","Beanstalk","Step Functions",
+  "API Gateway","Direct Connect","Snowball","Storage Gateway","DataSync",
+  "AppSync","AMI","SaaS","PaaS","IaaS","FaaS","SDK","CLI","MFA","SCP",
+  "RegionTable","GovCloud","NFS","TLS","SSL","HTTP","HTTPS","SSH","RDP",
+  "FTP","SFTP","JSON","CSV","ARN","CIDR","DNS","TCP","UDP","IPv4","IPv6",
+  "STS","ENI","NACL","NAT","SGs","IAM",
+]);
+
+const SHELL_KEYWORDS = new Set([
+  "aws","curl","echo","cat","yum","apt","systemctl","sudo","mkdir","cp","mv",
+  "rm","ls","cd","exit","return","if","then","else","fi","for","do","done",
+  "while","function","export","source","grep","sed","awk","jq","tail","head",
+  "find","xargs","npm","npx","node","python","python3","pip","pip3","docker",
+  "kubectl","terraform","git","wget",
+]);
+
+const PY_KEYWORDS = new Set([
+  "import","from","as","def","return","class","if","elif","else","try","except",
+  "finally","for","while","in","not","is","and","or","with","raise","pass",
+  "lambda","yield","True","False","None","await","async","global","nonlocal","print",
+]);
+
+const JS_KEYWORDS = new Set([
+  "const","let","var","function","return","if","else","for","while","do","switch",
+  "case","break","continue","new","this","class","extends","super","import","export",
+  "from","async","await","try","catch","finally","throw","typeof","instanceof","in","of",
+  "null","undefined","true","false",
+]);
+
+type Token = { t: string; cls: string };
+
+function tokenizeLine(line: string, lang: string): Token[] {
+  const tokens: Token[] = [];
+  let i = 0;
+  const len = line.length;
+
+  const isComment = lang === "json" ? false : true;
+  const commentChars: string[] = lang === "json" ? [] : ["//", "#"];
+
+  while (i < len) {
+    const ch = line[i];
+
+    // Whitespace
+    if (/\s/.test(ch)) {
+      let j = i;
+      while (j < len && /\s/.test(line[j])) j++;
+      tokens.push({ t: line.slice(i, j), cls: "" });
+      i = j;
+      continue;
+    }
+
+    // Single-line comments
+    if (isComment) {
+      let matched = false;
+      for (const cc of commentChars) {
+        if (line.startsWith(cc, i)) {
+          tokens.push({ t: line.slice(i), cls: "tok-com" });
+          return tokens;
+        }
+      }
+      if (matched) continue;
+    }
+
+    // Multi-line comment start /* */ (single line case)
+    if (line.startsWith("/*", i) && (lang === "js" || lang === "ts" || lang === "java" || lang === "go" || lang === "c")) {
+      const end = line.indexOf("*/", i + 2);
+      if (end !== -1) {
+        tokens.push({ t: line.slice(i, end + 2), cls: "tok-com" });
+        i = end + 2;
+        continue;
+      } else {
+        tokens.push({ t: line.slice(i), cls: "tok-com" });
+        return tokens;
+      }
+    }
+
+    // Strings
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      let j = i + 1;
+      while (j < len) {
+        if (line[j] === "\\" && j + 1 < len) { j += 2; continue; }
+        if (line[j] === quote) { j += 1; break; }
+        j += 1;
+      }
+      const str = line.slice(i, j);
+      // JSON keys (the next non-space char is ':') are highlighted as keywords
+      const trailing = line.slice(j).match(/^\s*:/);
+      if (lang === "json" && trailing) {
+        tokens.push({ t: str, cls: "tok-kw" });
+      } else {
+        tokens.push({ t: str, cls: "tok-str" });
+      }
+      i = j;
+      continue;
+    }
+
+    // Numbers
+    if (/\d/.test(ch) && (i === 0 || !/[A-Za-z_]/.test(line[i - 1] ?? " "))) {
+      let j = i;
+      while (j < len && /[0-9._]/.test(line[j])) j++;
+      tokens.push({ t: line.slice(i, j), cls: "tok-num" });
+      i = j;
+      continue;
+    }
+
+    // CLI flags --foo / -f
+    if (lang === "bash" && ch === "-" && (line[i + 1] === "-" || /[A-Za-z]/.test(line[i + 1] ?? ""))) {
+      let j = i + 1;
+      while (j < len && /[A-Za-z0-9_-]/.test(line[j])) j++;
+      tokens.push({ t: line.slice(i, j), cls: "tok-flag" });
+      i = j;
+      continue;
+    }
+
+    // Identifiers / keywords
+    if (/[A-Za-z_$]/.test(ch)) {
+      let j = i;
+      while (j < len && /[A-Za-z0-9_$]/.test(line[j])) j++;
+      const word = line.slice(i, j);
+      // First word of a bash line → command
+      const isFirstWord = lang === "bash" && /^\s*$/.test(line.slice(0, i));
+      let cls = "tok-punct";
+      if (
+        (lang === "python" && PY_KEYWORDS.has(word)) ||
+        (lang === "js" || lang === "ts" ? JS_KEYWORDS.has(word) : false) ||
+        (lang === "bash" && SHELL_KEYWORDS.has(word) && isFirstWord)
+      ) {
+        cls = "tok-kw";
+      } else if (word === "true" || word === "false" || word === "null" || word === "None" || word === "True" || word === "False") {
+        cls = "tok-bool";
+      } else if (AWS_SERVICES.has(word)) {
+        cls = "tok-aws";
+      } else if (lang === "bash" && isFirstWord && SHELL_KEYWORDS.has(word)) {
+        cls = "tok-cmd";
+      } else {
+        cls = "tok-punct";
+      }
+      tokens.push({ t: word, cls });
+      i = j;
+      continue;
+    }
+
+    // Punctuation
+    tokens.push({ t: ch, cls: "tok-punct" });
+    i += 1;
+  }
+  return tokens;
+}
+
+function CodeBlock({ example }: { example: CodeExample }) {
+  const [copied, setCopied] = useState(false);
+  const lines = example.code.split("\n");
+  const langLabel = example.language.toUpperCase();
+
+  const onCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(example.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  }, [example.code]);
+
+  return (
+    <div className="relative rounded-md border border-border bg-[#0d1117] overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 bg-bg-base/40 border-b border-border">
+        <div className="flex items-center gap-2 text-[11px] text-text-muted">
+          <span className="font-mono px-1.5 py-0.5 rounded bg-bg-base border border-border text-accent">
+            {langLabel}
+          </span>
+          <span>{example.title}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="flex items-center gap-1 text-[11px] text-text-muted hover:text-text-primary px-2 py-1 rounded hover:bg-bg-hover"
+          aria-label="Copy code"
+        >
+          {copied ? (
+            <>
+              <Check size={12} className="text-success" /> Copied
+            </>
+          ) : (
+            <>
+              <Copy size={12} /> Copy
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Code body with line numbers */}
+      <pre className="overflow-x-auto text-[12.5px] leading-[1.7] font-mono">
+        <code>
+          {lines.map((line, lnIdx) => {
+            const tokens = tokenizeLine(line, example.language);
+            return (
+              <div key={lnIdx} className="flex hover:bg-white/[0.02]">
+                <span
+                  className="select-none w-10 text-right pr-3 text-text-muted/60 border-r border-border/40 mr-3 flex-shrink-0"
+                  aria-hidden
+                >
+                  {lnIdx + 1}
+                </span>
+                <span className="whitespace-pre">
+                  {tokens.length === 0 ? (
+                    " "
+                  ) : (
+                    tokens.map((tok, ti) => (
+                      <span key={ti} className={tok.cls}>
+                        {tok.t}
+                      </span>
+                    ))
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </code>
+      </pre>
+    </div>
+  );
+}
+
+// ============================================================
+// Panel — colored-border container with collapse
+// ============================================================
+function Panel({
+  tab,
+  title,
+  collapsed,
+  onToggleCollapse,
+  onClose,
+  children,
+}: {
+  tab: TabMeta;
+  title: string;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const Icon = tab.icon;
+  return (
+    <section
+      className={`relative rounded-lg bg-bg-card/40 border border-border overflow-hidden ${tab.border} panel-enter`}
+    >
+      <header
+        className={`flex items-center justify-between px-4 py-2.5 ${tab.ring} border-b border-border`}
+      >
+        <div className="flex items-center gap-2">
+          <Icon size={14} className={tab.accent} />
+          <h3 className="text-[13.5px] font-semibold text-text-primary">{title}</h3>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="tip p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary"
+            data-tip={collapsed ? "Expand" : "Collapse"}
+            aria-label={collapsed ? "Expand panel" : "Collapse panel"}
+          >
+            {collapsed ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="tip p-1 rounded hover:bg-bg-hover text-text-muted hover:text-danger"
+            data-tip="Close tab"
+            aria-label="Close panel"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </header>
+      {!collapsed && <div className="px-4 py-4 animate-fade-in">{children}</div>}
+    </section>
+  );
+}
+
+// ============================================================
+// Main Page
+// ============================================================
+function ManualCheckbox({
+  checked,
+  onChange,
+  ariaLabel,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  ariaLabel?: string;
+}) {
+  return (
+    <span
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          onChange();
+        }
+      }}
+      className={
+        "inline-flex items-center justify-center w-[14px] h-[14px] rounded-[3px] cursor-pointer transition-colors flex-shrink-0 " +
+        (checked
+          ? "bg-success border border-success"
+          : "border-[1.5px] border-border hover:border-text-secondary bg-transparent")
+      }
+    >
+      {checked && <Check size={10} strokeWidth={3} className="text-white" />}
+    </span>
+  );
+}
+
+export default function Page() {
+  const [hydrated, setHydrated] = useState(false);
+  const [state, setState] = useState<AppState>(defaultState);
+  const [search, setSearch] = useState("");
+
+  // quiz UI state (per active topic, ephemeral)
+  const [quizMode, setQuizMode] = useState(false);
+  const [currentQ, setCurrentQ] = useState(0);
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [selectedAnswer, setSelectedAnswer] =
+    useState<"A" | "B" | "C" | "D" | null>(null);
+  const [activeCodeTab, setActiveCodeTab] = useState(0);
+
+  // for time-spent tracker
+  const [topicOpenedAt, setTopicOpenedAt] = useState<number>(Date.now());
+  const [now, setNow] = useState<number>(Date.now());
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // drag state
+  const [draggedTab, setDraggedTab] = useState<TabKey | null>(null);
+  const [dropTargetTab, setDropTargetTab] = useState<TabKey | null>(null);
+
+  // signed-in user (from /api/auth/me); null until /api/progress resolves
+  const [user, setUser] = useState<SessionUser | null>(null);
+
+  // ----------------------------------------------------------------
+  // Checkbox toggles — write through to the progress section.
+  // setState is optimistic; syncProgress debounces the PUT.
+  // ----------------------------------------------------------------
+  const onTopicCheckboxToggle = (topicId: string) => {
+    setState((s) => {
+      const nextTopicDone = { ...s.topicDone, [topicId]: !s.topicDone[topicId] };
+      syncProgress({ topicDone: nextTopicDone }, 500);
+      return { ...s, topicDone: nextTopicDone };
+    });
+  };
+  const onTabCheckboxToggle = (topicId: string, tabKey: TabKey) => {
+    setState((s) => {
+      const current = s.tabsDone[topicId] ?? {};
+      const nextForTopic = { ...current, [tabKey]: !current[tabKey] };
+      const nextTabsDone = { ...s.tabsDone, [topicId]: nextForTopic };
+      syncProgress({ tabsDone: nextTabsDone }, 500);
+      return { ...s, tabsDone: nextTabsDone };
+    });
+  };
+
+  // per-section debounced PUT helpers
+  const syncProfile = useSectionSync("profile");
+  const syncProgress = useSectionSync("progress");
+  const syncQuiz = useSectionSync("quiz");
+  const syncUi = useSectionSync("ui");
+
+  // -------- hydrate from /api/progress (sharded) --------
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/progress", {
+          credentials: "same-origin",
+        });
+        if (res.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+        const data = (await res.json()) as {
+          user: SessionUser;
+          sections: Record<string, unknown>;
+        };
+        if (cancelled) return;
+
+        const merged = mergeFromSections(data.sections);
+        // streak: record today's login if not already recorded
+        const today = todayISO();
+        const dates = merged.loginDates.includes(today)
+          ? merged.loginDates
+          : [...merged.loginDates, today].slice(-365);
+        merged.loginDates = dates;
+
+        // narrow viewport default-collapse
+        if (typeof window !== "undefined" && window.innerWidth < 1280) {
+          if (merged.rightCollapsed === false) merged.rightCollapsed = true;
+          if (merged.leftCollapsed === false && window.innerWidth < 900)
+            merged.leftCollapsed = true;
+        }
+
+        setUser(data.user);
+        setState(merged);
+        setHydrated(true);
+
+        // If today's login was newly added, push it to the profile section
+        // immediately so streak math is preserved on the server.
+        if (!data.sections?.profile ||
+            !Array.isArray((data.sections.profile as { loginDates?: string[] }).loginDates) ||
+            !(data.sections.profile as { loginDates: string[] }).loginDates.includes(today)) {
+          syncProfile({ loginDates: dates }, 0);
+        }
+      } catch {
+        // Network error / server down — fall back to a fresh in-memory state.
+        if (!cancelled) {
+          setState(defaultState());
+          setHydrated(true);
+        }
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // -------- per-section debounced syncs (progress / ui) --------
+  // (quiz is pushed in the QuizPanel onSubmit handler with a dotted patch.)
+  useEffect(() => {
+    if (!hydrated) return;
+    syncProgress(
+      {
+        visited: state.visited,
+        topicTime: state.topicTime,
+        selectedTopicId: state.selectedTopicId,
+      },
+      1500
+    );
+  }, [
+    state.visited,
+    state.topicTime,
+    state.selectedTopicId,
+    hydrated,
+    syncProgress,
+  ]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    syncUi(
+      {
+        expanded: state.expanded,
+        leftCollapsed: state.leftCollapsed,
+        rightCollapsed: state.rightCollapsed,
+        tabOrder: state.tabOrder,
+        openTabs: state.openTabs,
+        collapsedPanels: state.collapsedPanels,
+      },
+      1500
+    );
+  }, [
+    state.expanded,
+    state.leftCollapsed,
+    state.rightCollapsed,
+    state.tabOrder,
+    state.openTabs,
+    state.collapsedPanels,
+    hydrated,
+    syncUi,
+  ]);
+
+  // -------- topic switch side-effects --------
+  useEffect(() => {
+    if (!hydrated || !state.selectedTopicId) return;
+    setState((s) =>
+      s.visited[s.selectedTopicId]
+        ? s
+        : { ...s, visited: { ...s.visited, [s.selectedTopicId]: true } }
+    );
+    setQuizMode(false);
+    setCurrentQ(0);
+    setShowAnswer(false);
+    setSelectedAnswer(null);
+    setActiveCodeTab(0);
+    setTopicOpenedAt(Date.now());
+    contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [state.selectedTopicId, hydrated]);
+
+  // -------- timer tick for elapsed display --------
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // -------- accumulate topic time on unload / topic change --------
+  useEffect(() => {
+    return () => {
+      const elapsed = Date.now() - topicOpenedAt;
+      if (elapsed > 1000) {
+        setState((s) => ({
+          ...s,
+          topicTime: {
+            ...s.topicTime,
+            [s.selectedTopicId]: (s.topicTime[s.selectedTopicId] ?? 0) + elapsed,
+          },
+        }));
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.selectedTopicId]);
+
+  const selectedTopic: Topic | undefined = useMemo(
+    () => topics.find((t) => t.id === state.selectedTopicId),
+    [state.selectedTopicId]
+  );
+
+  // -------- derived metrics --------
+  const totalTopics = topics.length;
+  const visitedCount = Object.values(state.visited).filter(Boolean).length;
+  const completedCount = Object.values(state.topicDone).filter(Boolean).length;
+  const gScore = useMemo(() => globalScore(state.quiz), [state.quiz]);
+  const xp = useMemo(() => xpFromQuiz(state.quiz), [state.quiz]);
+  const level = levelFromXp(xp);
+  const streak = useMemo(() => computeStreak(state.loginDates), [state.loginDates]);
+  const radarData = useMemo(() => domainStrengths(state.quiz), [state.quiz]);
+  const revisions = useMemo(() => recommendedRevisions(state.quiz), [state.quiz]);
+
+  // -------- search filter --------
+  const filteredSections = useMemo(() => {
+    if (!search.trim()) return sections;
+    const q = search.toLowerCase();
+    return sections
+      .map((sec) => {
+        const matchingIds = sec.topicIds.filter((id) => {
+          const t = topics.find((x) => x.id === id);
+          if (!t) return false;
+          return (
+            t.title.toLowerCase().includes(q) ||
+            t.shortLabel.toLowerCase().includes(q) ||
+            t.explanation.toLowerCase().includes(q)
+          );
+        });
+        return matchingIds.length ? { ...sec, topicIds: matchingIds } : null;
+      })
+      .filter(Boolean) as typeof sections;
+  }, [search]);
+
+  // -------- helpers --------
+  const isPanelOpen = (k: TabKey) => state.openTabs.includes(k);
+  const isPanelCollapsed = (k: TabKey) => state.collapsedPanels.includes(k);
+
+  const togglePanelCollapse = (k: TabKey) =>
+    setState((s) => ({
+      ...s,
+      collapsedPanels: s.collapsedPanels.includes(k)
+        ? s.collapsedPanels.filter((x) => x !== k)
+        : [...s.collapsedPanels, k],
+    }));
+
+  const closePanel = (k: TabKey) =>
+    setState((s) => ({ ...s, openTabs: s.openTabs.filter((x) => x !== k) }));
+
+  const togglePanel = (k: TabKey) =>
+    setState((s) =>
+      s.openTabs.includes(k)
+        ? { ...s, openTabs: s.openTabs.filter((x) => x !== k) }
+        : { ...s, openTabs: [...s.openTabs, k] }
+    );
+
+  const openAll = () =>
+    setState((s) => ({ ...s, openTabs: [...s.tabOrder], collapsedPanels: [] }));
+  const collapseAll = () =>
+    setState((s) => ({ ...s, collapsedPanels: [...s.tabOrder] }));
+  const expandAll = () =>
+    setState((s) => ({ ...s, collapsedPanels: [] }));
+
+  // -------- drag-to-reorder tab bar --------
+  const handleDragStart = (k: TabKey) => () => setDraggedTab(k);
+  const handleDragOver = (k: TabKey) => (e: React.DragEvent) => {
+    e.preventDefault();
+    setDropTargetTab(k);
+  };
+  const handleDrop = (target: TabKey) => () => {
+    if (!draggedTab || draggedTab === target) {
+      setDraggedTab(null);
+      setDropTargetTab(null);
+      return;
+    }
+    setState((s) => {
+      const next = s.tabOrder.filter((t) => t !== draggedTab);
+      const idx = next.indexOf(target);
+      next.splice(idx, 0, draggedTab);
+      return { ...s, tabOrder: next };
+    });
+    setDraggedTab(null);
+    setDropTargetTab(null);
+  };
+  const handleDragEnd = () => {
+    setDraggedTab(null);
+    setDropTargetTab(null);
+  };
+
+  // -------- render --------
+  if (!selectedTopic) {
+    return (
+      <div className="flex items-center justify-center h-screen text-text-muted">
+        Loading…
+      </div>
+    );
+  }
+
+  const accumulatedMs = (state.topicTime[selectedTopic.id] ?? 0) + (now - topicOpenedAt);
+
+  return (
+    <div className="min-h-screen flex flex-col bg-bg-base text-text-primary overflow-hidden">
+      {/* ============ TOP BAR ============ */}
+      <header className="flex-shrink-0 border-b border-border bg-bg-panel/90 backdrop-blur sticky top-0 z-40">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-md bg-bg-base border border-border flex items-center justify-center">
+              <span className="text-accent font-bold text-lg">aws</span>
+            </div>
+            <div className="hidden md:block">
+              <div className="text-sm font-semibold text-text-primary">SAA Learning App</div>
+              <div className="text-[11px] text-text-muted">Solutions Architect Associate</div>
+            </div>
+          </div>
+
+          {/* Search */}
+          <div className="flex-1 max-w-2xl mx-auto relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={16} />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search IAM, EC2, S3..."
+              className="w-full pl-9 pr-12 py-2 rounded-md bg-bg-base border border-border focus:border-accent focus:outline-none text-sm text-text-primary placeholder:text-text-muted"
+              aria-label="Search topics"
+            />
+            <kbd className="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-text-muted border border-border rounded px-1.5 py-0.5">
+              ⌘K
+            </kbd>
+          </div>
+
+          {/* Overall progress — Visited + Completed stacked bars */}
+          <div className="hidden lg:flex flex-col gap-2 min-w-[220px]">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-text-secondary w-16">Visited</span>
+              <div className="flex-1 h-[5px] rounded-full bg-bg-base overflow-hidden">
+                <div
+                  className="h-full bg-accent transition-all"
+                  style={{ width: `${(visitedCount / totalTopics) * 100}%` }}
+                />
+              </div>
+              <span className="text-[11px] text-text-secondary w-12 text-right tabular-nums">
+                {visitedCount} / {totalTopics}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-text-secondary w-16">Completed</span>
+              <div className="flex-1 h-[5px] rounded-full bg-bg-base overflow-hidden">
+                <div
+                  className="h-full bg-success transition-all"
+                  style={{ width: `${(completedCount / totalTopics) * 100}%` }}
+                />
+              </div>
+              <span className="text-[11px] text-text-secondary w-12 text-right tabular-nums">
+                {completedCount} / {totalTopics}
+              </span>
+            </div>
+          </div>
+
+          <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-md bg-bg-base border border-border">
+            <Trophy size={16} className="text-accent" />
+            <div className="text-xs">
+              <div className="text-text-muted leading-3">Global Quiz Score</div>
+              <div className="font-semibold text-text-primary">
+                {gScore.correct} / {gScore.total}{" "}
+                <span className="text-text-muted">
+                  ({gScore.total ? Math.round((gScore.correct / gScore.total) * 100) : 0}%)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button className="p-2 rounded-md hover:bg-bg-hover text-text-muted" aria-label="Light theme" type="button"><Sun size={16} /></button>
+            <button className="p-2 rounded-md bg-bg-base text-accent border border-border" aria-label="Dark theme" type="button"><Moon size={16} /></button>
+
+            {user && (
+              <div className="ml-2 flex items-center gap-2 pl-3 border-l border-border">
+                <div className="hidden sm:block text-right leading-tight">
+                  <div className="text-[12px] text-text-primary font-medium">
+                    {user.displayName}
+                  </div>
+                  <div className="text-[10px] text-text-muted font-mono">
+                    {user.username}
+                  </div>
+                </div>
+                <div
+                  className="w-9 h-9 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center text-accent font-semibold text-sm"
+                  aria-label={user.displayName}
+                  title={user.username}
+                >
+                  {user.displayName.charAt(0).toUpperCase()}
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await fetch("/api/auth/logout", {
+                        method: "POST",
+                        credentials: "same-origin",
+                      });
+                    } finally {
+                      window.location.href = "/login";
+                    }
+                  }}
+                  className="tip p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-danger"
+                  data-tip="Sign out"
+                  aria-label="Sign out"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ============ MAIN ============ */}
+      <div className="flex-1 flex min-h-0">
+        {/* ====== LEFT SIDEBAR ====== */}
+        <LeftSidebar
+          collapsed={state.leftCollapsed}
+          setCollapsed={(v) => setState((s) => ({ ...s, leftCollapsed: v }))}
+          filteredSections={filteredSections}
+          expanded={state.expanded}
+          setExpanded={(eid) =>
+            setState((s) => ({
+              ...s,
+              expanded: { ...s.expanded, [eid]: !s.expanded[eid] },
+            }))
+          }
+          selectedTopicId={state.selectedTopicId}
+          setSelectedTopicId={(id) =>
+            setState((s) => ({ ...s, selectedTopicId: id }))
+          }
+          visited={state.visited}
+          quiz={state.quiz}
+          streak={streak}
+          topicDone={state.topicDone}
+          onTopicCheckboxToggle={onTopicCheckboxToggle}
+        />
+
+        {/* ====== CENTER ====== */}
+        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Breadcrumb */}
+          <div className="px-4 lg:px-6 py-2 text-[11.5px] text-text-muted border-b border-border flex items-center gap-1.5 bg-bg-base/40">
+            <span>{selectedTopic.section}</span>
+            <ChevronsRight size={12} />
+            <span className="text-text-primary font-medium">{selectedTopic.shortLabel}</span>
+          </div>
+
+          {/* Sticky tab bar */}
+          <div className="glass sticky top-0 z-20">
+            <div className="flex items-center gap-1 px-3 py-1.5 overflow-x-auto">
+              {state.tabOrder.map((k) => {
+                const meta = TABS[k];
+                const Icon = meta.icon;
+                const open = isPanelOpen(k);
+                const collapsed = isPanelCollapsed(k);
+                const isDragging = draggedTab === k;
+                const isDropTarget = dropTargetTab === k && draggedTab && draggedTab !== k;
+                return (
+                  <div
+                    key={k}
+                    draggable
+                    onDragStart={handleDragStart(k)}
+                    onDragOver={handleDragOver(k)}
+                    onDrop={handleDrop(k)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center group rounded-t-md border-t border-l border-r ${open
+                      ? "border-border bg-bg-card text-text-primary"
+                      : "border-transparent bg-bg-base/40 text-text-muted hover:text-text-primary"} ${isDragging ? "tab-dragging" : ""} ${isDropTarget ? "tab-drop-target" : ""}`}
+                    title={`Drag to reorder · ${meta.label}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!open) togglePanel(k);
+                        // scroll the panel into view
+                        const el = document.getElementById(`panel-${k}`);
+                        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-[12.5px]"
+                    >
+                      <GripVertical size={11} className="text-text-muted/50 group-hover:text-text-muted cursor-grab" />
+                      <Icon size={13} className={open ? meta.accent : ""} />
+                      <span>{meta.label}</span>
+                      {open && collapsed && (
+                        <span className="text-[10px] text-text-muted ml-1">(min)</span>
+                      )}
+                      <ManualCheckbox
+                        checked={state.tabsDone[state.selectedTopicId]?.[k] ?? false}
+                        onChange={() => onTabCheckboxToggle(state.selectedTopicId, k)}
+                        ariaLabel={`Mark ${meta.label} done`}
+                      />
+                    </button>
+                    {open && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closePanel(k);
+                        }}
+                        className="p-1 mr-1 rounded text-text-muted hover:text-danger hover:bg-bg-hover"
+                        aria-label={`Close ${meta.label}`}
+                      >
+                        <X size={11} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+
+              <div className="ml-auto flex items-center gap-1 pr-1">
+                <span className="hidden lg:flex items-center gap-1 text-[11px] text-text-muted mr-2">
+                  <Clock size={11} />
+                  {formatElapsed(accumulatedMs)}
+                </span>
+                <button
+                  type="button"
+                  onClick={openAll}
+                  className="text-[11px] px-2 py-1 rounded hover:bg-bg-hover text-text-secondary"
+                >
+                  Open all
+                </button>
+                <button
+                  type="button"
+                  onClick={expandAll}
+                  className="text-[11px] px-2 py-1 rounded hover:bg-bg-hover text-text-secondary"
+                >
+                  Expand all
+                </button>
+                <button
+                  type="button"
+                  onClick={collapseAll}
+                  className="text-[11px] px-2 py-1 rounded hover:bg-bg-hover text-text-secondary"
+                >
+                  Collapse all
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Scrollable panels */}
+          <div ref={contentRef} className="flex-1 overflow-y-auto px-4 lg:px-6 py-5 space-y-4">
+            {/* Topic header card */}
+            <div className="rounded-lg border border-accent/30 bg-gradient-to-r from-bg-panel to-bg-card overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-md bg-accent/20 border border-accent/40 flex items-center justify-center text-accent">
+                    <Sparkles size={20} />
+                  </div>
+                  <div>
+                    <h1 className="text-lg font-bold text-text-primary leading-tight">
+                      {selectedTopic.title}
+                    </h1>
+                    <div className="text-[11.5px] text-text-muted">
+                      {selectedTopic.domain} · {topicScore(selectedTopic.id, state.quiz).answered} / {selectedTopic.questions.length} questions answered
+                    </div>
+                    <div className="text-[12px] text-text-secondary mt-0.5">
+                      {Object.values(state.tabsDone[state.selectedTopicId] ?? {}).filter(Boolean).length} / 6 tabs done
+                    </div>
+                  </div>
+                </div>
+                <div className="hidden md:flex items-center gap-2 text-[11px] text-text-muted">
+                  <Clock size={12} /> {formatElapsed(accumulatedMs)} on topic
+                </div>
+              </div>
+            </div>
+
+            {/* Open panels in tabOrder */}
+            {state.openTabs.length === 0 && (
+              <div className="rounded-lg border border-border bg-bg-card/40 p-8 text-center text-text-muted">
+                All tabs closed. Click <strong className="text-accent">Open all</strong> in the tab bar above to bring panels back.
+              </div>
+            )}
+
+            {state.tabOrder
+              .filter((k) => state.openTabs.includes(k))
+              .map((k) => {
+                const meta = TABS[k];
+                const collapsed = isPanelCollapsed(k);
+                return (
+                  <div key={k} id={`panel-${k}`}>
+                    <Panel
+                      tab={meta}
+                      title={`${
+                        k === "overview"
+                          ? "1. Overview"
+                          : k === "explanation"
+                          ? "2. Explanation"
+                          : k === "diagram"
+                          ? "3. Diagram"
+                          : k === "analogy"
+                          ? "4. Real-world Analogy"
+                          : k === "code"
+                          ? "5. Code Example"
+                          : "6. Quiz Time"
+                      }`}
+                      collapsed={collapsed}
+                      onToggleCollapse={() => togglePanelCollapse(k)}
+                      onClose={() => closePanel(k)}
+                    >
+                      {k === "overview" && <BeginnerPanel topic={selectedTopic} />}
+                      {k === "explanation" && <ProblemPanel topic={selectedTopic} />}
+                      {k === "diagram" && <ArchitecturePanel topic={selectedTopic} />}
+                      {k === "analogy" && <AnalogyPanel topic={selectedTopic} />}
+                      {k === "code" && (
+                        <CodePanel
+                          topic={selectedTopic}
+                          activeTab={activeCodeTab}
+                          setActiveTab={setActiveCodeTab}
+                        />
+                      )}
+                      {k === "quiz" && (
+                        <QuizPanel
+                          topic={selectedTopic}
+                          quiz={state.quiz}
+                          quizMode={quizMode}
+                          setQuizMode={setQuizMode}
+                          currentQ={currentQ}
+                          setCurrentQ={setCurrentQ}
+                          showAnswer={showAnswer}
+                          setShowAnswer={setShowAnswer}
+                          selectedAnswer={selectedAnswer}
+                          setSelectedAnswer={setSelectedAnswer}
+                          onSubmit={(qIdx, choice, isCorrect) => {
+                            setState((s) => ({
+                              ...s,
+                              quiz: {
+                                ...s.quiz,
+                                [selectedTopic.id]: {
+                                  ...(s.quiz[selectedTopic.id] ?? {}),
+                                  [qIdx]: { selected: choice, correct: isCorrect },
+                                },
+                              },
+                            }));
+                            // Per-answer dotted-path patch — touches a single field
+                            // in userProgress/{user}/sections/quiz, no overwrite.
+                            syncQuiz(
+                              {
+                                [`answers.${selectedTopic.id}.${qIdx}`]: {
+                                  selected: choice,
+                                  correct: isCorrect,
+                                },
+                              },
+                              500
+                            );
+                          }}
+                          onReset={() => {
+                            setState((s) => {
+                              const next = { ...s.quiz };
+                              delete next[selectedTopic.id];
+                              return { ...s, quiz: next };
+                            });
+                            setCurrentQ(0);
+                            setShowAnswer(false);
+                            setSelectedAnswer(null);
+                            // Clear the topic's bucket on the server too —
+                            // overwrite that topic's map with {} so all previous
+                            // answers for this topic are gone but other topics stay.
+                            syncQuiz(
+                              { [`answers.${selectedTopic.id}`]: {} },
+                              0
+                            );
+                          }}
+                        />
+                      )}
+                    </Panel>
+                  </div>
+                );
+              })}
+
+            <div className="text-[11.5px] text-text-muted px-1 pb-4">
+              Tip: drag a tab to reorder · click × to close · re-open from the bar.
+              Progress saves to your browser automatically.
+            </div>
+          </div>
+        </main>
+
+        {/* ====== RIGHT DASHBOARD ====== */}
+        <RightSidebar
+          collapsed={state.rightCollapsed}
+          setCollapsed={(v) => setState((s) => ({ ...s, rightCollapsed: v }))}
+          radarData={radarData}
+          gScore={gScore}
+          xp={xp}
+          level={level}
+          streak={streak}
+          state={state}
+          revisions={revisions}
+          jumpToTopic={(id) => setState((s) => ({ ...s, selectedTopicId: id }))}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Left Sidebar
+// ============================================================
+function LeftSidebar({
+  collapsed,
+  setCollapsed,
+  filteredSections,
+  expanded,
+  setExpanded,
+  selectedTopicId,
+  setSelectedTopicId,
+  visited,
+  quiz,
+  streak,
+  topicDone,
+  onTopicCheckboxToggle,
+}: {
+  collapsed: boolean;
+  setCollapsed: (v: boolean) => void;
+  filteredSections: typeof sections;
+  expanded: Record<string, boolean>;
+  setExpanded: (id: string) => void;
+  selectedTopicId: string;
+  setSelectedTopicId: (id: string) => void;
+  visited: Record<string, boolean>;
+  quiz: QuizState;
+  streak: number;
+  topicDone: Record<string, boolean>;
+  onTopicCheckboxToggle: (topicId: string) => void;
+}) {
+  if (collapsed) {
+    return (
+      <aside className="w-12 flex-shrink-0 border-r border-border bg-bg-panel/60 flex flex-col">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className="tip p-2 m-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary"
+          data-tip="Expand sidebar"
+          aria-label="Expand sidebar"
+        >
+          <PanelLeftOpen size={16} />
+        </button>
+        <div className="flex-1 overflow-y-auto py-2">
+          {sections.map((sec, i) => (
+            <button
+              key={sec.id}
+              type="button"
+              onClick={() => setCollapsed(false)}
+              className="tip w-10 h-10 mx-1 my-1 rounded flex items-center justify-center hover:bg-bg-hover text-text-muted hover:text-text-primary"
+              data-tip={sec.title}
+              aria-label={sec.title}
+            >
+              <span className="text-[12px] font-mono">{i + 1}</span>
+            </button>
+          ))}
+        </div>
+        <div className="p-2 border-t border-border">
+          <div className="tip w-8 h-8 mx-auto rounded-full bg-accent/15 flex items-center justify-center text-accent" data-tip={`${streak}-day streak`}>
+            <Flame size={14} />
+          </div>
+        </div>
+      </aside>
+    );
+  }
+  return (
+    <aside className="w-72 flex-shrink-0 border-r border-border bg-bg-panel/60 overflow-y-auto flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3">
+        <div className="text-[11px] uppercase tracking-wide text-text-muted">Course Content</div>
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          className="tip p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary"
+          data-tip="Collapse sidebar"
+          aria-label="Collapse sidebar"
+        >
+          <PanelLeftClose size={14} />
+        </button>
+      </div>
+
+      <nav className="flex-1">
+        {filteredSections.map((sec) => {
+          const pct = sectionProgressPct(sec.id, visited);
+          const isExpanded = expanded[sec.id] ?? false;
+          return (
+            <div key={sec.id} className="px-2">
+              <button
+                type="button"
+                onClick={() => setExpanded(sec.id)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-md hover:bg-bg-hover text-left group"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  {isExpanded ? (
+                    <ChevronDown size={14} className="text-text-muted shrink-0" />
+                  ) : (
+                    <ChevronRight size={14} className="text-text-muted shrink-0" />
+                  )}
+                  <span className="text-sm font-medium truncate">{sec.title}</span>
+                </div>
+                <span
+                  className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${
+                    pct === 100
+                      ? "bg-success/20 text-success"
+                      : pct > 0
+                      ? "bg-accent/15 text-accent"
+                      : "bg-bg-base text-text-muted"
+                  }`}
+                >
+                  {pct}%
+                </span>
+              </button>
+              {isExpanded && (
+                <ul className="ml-2 my-1 border-l border-border">
+                  {sec.topicIds.map((tid) => {
+                    const t = topics.find((x) => x.id === tid);
+                    if (!t) return null;
+                    const isActive = selectedTopicId === tid;
+                    const v = visited[tid];
+                    const score = topicScore(tid, quiz);
+                    return (
+                      <li key={tid}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTopicId(tid)}
+                          className={`w-full text-left flex items-center gap-1.5 px-3 py-1.5 ml-2 my-0.5 rounded text-[13px] transition-colors ${
+                            isActive
+                              ? "bg-accent/15 text-accent font-medium"
+                              : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                          }`}
+                        >
+                          <ManualCheckbox
+                            checked={topicDone[tid] ?? false}
+                            onChange={() => onTopicCheckboxToggle(tid)}
+                            ariaLabel={`Mark ${t.shortLabel} done`}
+                          />
+                          {v ? (
+                            <CheckCircle2 size={13} className={isActive ? "text-accent" : "text-success"} />
+                          ) : (
+                            <Circle size={13} className="text-text-muted" />
+                          )}
+                          <span className="truncate flex-1">{t.shortLabel}</span>
+                          {score.answered > 0 && (
+                            <span className="text-[10px] font-mono text-text-muted">
+                              {score.correct}/{score.answered}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+
+      <div className="m-4 mt-3 p-4 rounded-lg bg-gradient-to-br from-orange-500/15 to-red-500/10 border border-accent/30">
+        <div className="flex items-center gap-2 mb-1">
+          <Flame size={18} className="text-accent" />
+          <div className="text-sm font-semibold">{streak} Day Streak!</div>
+        </div>
+        <div className="text-[11px] text-text-secondary">
+          {streak > 0 ? "Keep it up — come back tomorrow." : "Visit a topic today to start a streak."}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ============================================================
+// Right Sidebar
+// ============================================================
+function RightSidebar({
+  collapsed,
+  setCollapsed,
+  radarData,
+  gScore,
+  xp,
+  level,
+  streak,
+  state,
+  revisions,
+  jumpToTopic,
+}: {
+  collapsed: boolean;
+  setCollapsed: (v: boolean) => void;
+  radarData: { domain: string; score: number }[];
+  gScore: { correct: number; total: number };
+  xp: number;
+  level: number;
+  streak: number;
+  state: AppState;
+  revisions: { topic: Topic; pct: number | null; answered: number }[];
+  jumpToTopic: (id: string) => void;
+}) {
+  if (collapsed) {
+    return (
+      <aside className="w-12 flex-shrink-0 border-l border-border bg-bg-panel/60 flex flex-col">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className="tip p-2 m-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary"
+          data-tip="Expand dashboard"
+          aria-label="Expand dashboard"
+        >
+          <PanelRightOpen size={16} />
+        </button>
+        <div className="flex-1 flex flex-col items-center gap-2 py-2">
+          <div className="tip p-2 rounded bg-bg-card/60 text-accent" data-tip="Domain strength"><TrendingUp size={14} /></div>
+          <div className="tip p-2 rounded bg-bg-card/60 text-accent" data-tip={`Global score ${gScore.correct}/${gScore.total}`}><Trophy size={14} /></div>
+          <div className="tip p-2 rounded bg-bg-card/60 text-accent" data-tip={`${xp} XP · Level ${level}`}><Star size={14} /></div>
+          <div className="tip p-2 rounded bg-bg-card/60 text-accent" data-tip={`${streak}-day streak`}><Flame size={14} /></div>
+        </div>
+      </aside>
+    );
+  }
+  return (
+    <aside className="w-80 flex-shrink-0 border-l border-border bg-bg-panel/60 overflow-y-auto">
+      <div className="p-4 space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold">Your Performance</div>
+            <div className="text-[11px] text-text-muted">Today</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="text-[11px] text-accent px-2 py-1 rounded bg-accent/10 border border-accent/30">Today</div>
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              className="tip p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary"
+              data-tip="Collapse dashboard"
+              aria-label="Collapse dashboard"
+            >
+              <PanelRightClose size={14} />
+            </button>
+          </div>
+        </div>
+
+        {/* Radar chart */}
+        <div className="rounded-md border border-border bg-bg-card/50 p-3">
+          <div className="text-xs text-text-muted mb-1">Domain Strength</div>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarData} outerRadius="75%">
+                <PolarGrid stroke="#2d3a4f" />
+                <PolarAngleAxis dataKey="domain" tick={{ fill: "#b0bac6", fontSize: 10 }} />
+                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: "#8b949e", fontSize: 9 }} axisLine={false} />
+                <Radar name="Score" dataKey="score" stroke="#ff9900" fill="#ff9900" fillOpacity={0.25} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Topic completion */}
+        <div className="space-y-2">
+          <div className="text-xs font-semibold text-text-secondary">Topic Completion</div>
+          {sections.map((sec) => {
+            const pct = sectionProgressPct(sec.id, state.visited);
+            return (
+              <div key={sec.id}>
+                <div className="flex items-center justify-between text-[11px] mb-1">
+                  <span className="text-text-secondary truncate">{sec.title}</span>
+                  <span className="font-mono text-text-muted">{pct}%</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-bg-base/60 overflow-hidden">
+                  <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Recommended Revisions */}
+        <div className="rounded-md border border-border bg-bg-card/50 p-3 space-y-2">
+          <div className="text-xs font-semibold text-text-secondary flex items-center gap-1.5">
+            <TrendingUp size={12} className="text-accent" />
+            Recommended Revision Topics
+          </div>
+          {revisions.length === 0 ? (
+            <div className="text-[11px] text-text-muted italic">
+              Take a few quizzes — we'll highlight your weakest topics here.
+            </div>
+          ) : (
+            revisions.map(({ topic, pct }, i) => (
+              <button
+                type="button"
+                key={topic.id}
+                onClick={() => jumpToTopic(topic.id)}
+                className="w-full text-left flex items-start gap-2 p-2 rounded hover:bg-bg-hover"
+              >
+                <div className="w-5 h-5 rounded-full bg-accent/20 text-accent text-[10px] font-bold flex items-center justify-center shrink-0">
+                  {i + 1}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[12px] text-text-primary truncate">{topic.shortLabel}</div>
+                  <div className="text-[10.5px] text-text-muted">
+                    Scored {pct ?? 0}% — review {topic.domain.toLowerCase()} concepts
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* XP card */}
+        <div className="rounded-md border border-border bg-bg-card/50 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <div className="text-[11px] text-text-muted">XP Points</div>
+              <div className="text-xl font-bold text-text-primary">{xp.toLocaleString()}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] text-text-muted">Level {level}</div>
+              <div className="text-[10px] text-text-muted">
+                Next: {nextLevelXp(level).toLocaleString()} XP
+              </div>
+            </div>
+          </div>
+          <div className="h-2 w-full rounded-full bg-bg-base/60 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-accent"
+              style={{
+                width: `${Math.min(
+                  100,
+                  ((xp - nextLevelXp(level - 1)) /
+                    (nextLevelXp(level) - nextLevelXp(level - 1))) *
+                    100
+                )}%`,
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Streak + Rank */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-md border border-border bg-bg-card/50 p-3 text-center">
+            <Flame size={18} className="text-accent mx-auto mb-1" />
+            <div className="text-sm font-bold">{streak}</div>
+            <div className="text-[10px] text-text-muted">Day Streak</div>
+          </div>
+          <div className="rounded-md border border-border bg-bg-card/50 p-3 text-center">
+            <Trophy size={18} className="text-accent mx-auto mb-1" />
+            <div className="text-sm font-bold">
+              {gScore.total
+                ? Math.round((gScore.correct / gScore.total) * 100) >= 80
+                  ? "Top 18%"
+                  : Math.round((gScore.correct / gScore.total) * 100) >= 50
+                  ? "Top 40%"
+                  : "Newcomer"
+                : "Newcomer"}
+            </div>
+            <div className="text-[10px] text-text-muted">Rank</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ============================================================
+// Beginner Panel — structured layout with TL;DR + subtopics + side card
+// ============================================================
+function BeginnerPanel({ topic }: { topic: Topic }) {
+  const { tldr, subtopics } = deriveBeginnerStructure(topic);
+
+  const quickRef =
+    topic.quickReference ?? {
+      title: `What is ${topic.shortLabel}?`,
+      icon: "💡",
+      bullets: subtopics.flatMap((s) => s.bullets.slice(0, 2).map((b) => b.text)).slice(0, 5),
+      analogyBrief: topic.analogy.split(".").slice(0, 1).join(".") + ".",
+    };
+
+  const keyFacts =
+    topic.keyFacts ?? [
+      { label: "Domain", value: topic.domain, icon: "🎯" },
+      { label: "Section", value: topic.section, icon: "📚" },
+      { label: "Questions", value: `${topic.questions.length} hard exam-style`, icon: "❓" },
+      { label: "Service Type", value: topic.domain === "Identity" || topic.domain === "Security" ? "Global" : "Regional (most)", icon: "🌍" },
+    ];
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
+      <div className="space-y-4">
+        {/* TL;DR */}
+        <div className="tldr-callout">
+          <div className="text-[11px] uppercase tracking-wide text-accent font-semibold mb-1">TL;DR</div>
+          <p className="text-[14px] leading-relaxed text-text-primary">{tldr}</p>
+        </div>
+
+        {/* Subtopics */}
+        <div className="space-y-4">
+          {subtopics.map((sub, i) => (
+            <div key={i}>
+              <h4 className="text-[14px] font-semibold text-text-primary mb-2">{sub.heading}</h4>
+              <ul className="space-y-1.5">
+                {sub.bullets.map((b, j) => (
+                  <li key={j} className="flex items-start gap-2 text-[13.5px] leading-relaxed text-text-secondary">
+                    <span className="text-accent select-none mt-0.5 shrink-0">
+                      {b.icon}
+                    </span>
+                    <span>{renderBold(b.text, `${i}-${j}`)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        {/* Key facts grid */}
+        <div>
+          <h4 className="text-[12px] uppercase tracking-wide text-text-muted font-semibold mb-2">Key Facts</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {keyFacts.map((f, i) => (
+              <div key={i} className="rounded-md border border-border bg-bg-card/40 px-3 py-2 flex items-center gap-3">
+                <span className="text-lg">{f.icon ?? "📌"}</span>
+                <div className="min-w-0">
+                  <div className="text-[10.5px] uppercase tracking-wide text-text-muted">{f.label}</div>
+                  <div className="text-[12.5px] text-text-primary font-medium truncate">{f.value}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Side: Quick Reference */}
+      <aside className="rounded-md border border-accent/30 bg-accent/[0.06] p-4 h-fit sticky top-[60px]">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xl">{quickRef.icon ?? "💡"}</span>
+          <h4 className="text-[13px] font-semibold text-accent">{quickRef.title}</h4>
+        </div>
+        <ul className="space-y-1.5 mb-3">
+          {quickRef.bullets.map((b, i) => (
+            <li key={i} className="flex items-start gap-2 text-[12.5px] text-text-secondary leading-relaxed">
+              <span className="text-accent select-none mt-1 shrink-0">▸</span>
+              <span>{renderBold(b, `qr-${i}`)}</span>
+            </li>
+          ))}
+        </ul>
+        {quickRef.analogyBrief && (
+          <div className="text-[11.5px] text-text-muted italic border-t border-border pt-2">
+            {quickRef.analogyBrief}
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+// ============================================================
+// Other panels
+// ============================================================
+function AnalogyPanel({ topic }: { topic: Topic }) {
+  return (
+    <div className="rounded-md bg-purple-500/[0.06] border border-purple-500/20 p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Lightbulb size={16} className="text-purple-400" />
+        <span className="text-[12px] uppercase tracking-wide text-purple-400 font-semibold">
+          Think of it like…
+        </span>
+      </div>
+      <p className="text-[14px] leading-relaxed text-text-primary whitespace-pre-line">{topic.analogy}</p>
+    </div>
+  );
+}
+
+function ArchitecturePanel({ topic }: { topic: Topic }) {
+  return (
+    <div className="space-y-3">
+      <div
+        className="diagram-container rounded-md bg-bg-base/50 p-3 border border-border"
+        dangerouslySetInnerHTML={{ __html: topic.diagram }}
+      />
+      {topic.diagramLegend && topic.diagramLegend.length > 0 && (
+        <div className="rounded-md border border-border bg-bg-card/40 p-3">
+          <div className="text-[11px] uppercase tracking-wide text-text-muted mb-2 font-semibold">Legend</div>
+          <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1.5">
+            {topic.diagramLegend.map((l, i) => (
+              <li key={i} className="flex items-start gap-2 text-[12.5px]">
+                <span className="w-3 h-3 rounded-sm mt-1 shrink-0" style={{ background: l.color }} />
+                <div>
+                  <span className="text-text-primary font-medium">{l.label}</span>
+                  <span className="text-text-muted"> — {l.description}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CodePanel({
+  topic,
+  activeTab,
+  setActiveTab,
+}: {
+  topic: Topic;
+  activeTab: number;
+  setActiveTab: (n: number) => void;
+}) {
+  const examples: CodeExample[] = topic.codeExamples ?? [topic.codeExample];
+  const idx = Math.min(activeTab, examples.length - 1);
+  const ex = examples[idx];
+  return (
+    <div className="space-y-2">
+      {examples.length > 1 && (
+        <div className="flex items-center gap-1 border-b border-border">
+          {examples.map((e, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setActiveTab(i)}
+              className={`px-3 py-1.5 text-[12px] rounded-t-md border-t border-l border-r transition-colors ${
+                i === idx
+                  ? "border-border bg-[#0d1117] text-accent"
+                  : "border-transparent text-text-muted hover:text-text-primary"
+              }`}
+            >
+              {e.tab ?? e.language.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      )}
+      <CodeBlock example={ex} />
+    </div>
+  );
+}
+
+function ProblemPanel({ topic }: { topic: Topic }) {
+  return (
+    <div className="rounded-md border border-yellow-500/30 bg-yellow-500/[0.06] p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <AlertCircle size={16} className="text-yellow-400" />
+        <span className="text-[12px] uppercase tracking-wide text-yellow-400 font-semibold">
+          Solutions Architect Scenario
+        </span>
+      </div>
+      <p className="text-[14px] leading-relaxed text-text-primary whitespace-pre-line">
+        {topic.problemStatement}
+      </p>
+    </div>
+  );
+}
+
+// ============================================================
+// Quiz Panel
+// ============================================================
+function QuizPanel({
+  topic,
+  quiz,
+  quizMode,
+  setQuizMode,
+  currentQ,
+  setCurrentQ,
+  showAnswer,
+  setShowAnswer,
+  selectedAnswer,
+  setSelectedAnswer,
+  onSubmit,
+  onReset,
+}: {
+  topic: Topic;
+  quiz: QuizState;
+  quizMode: boolean;
+  setQuizMode: (b: boolean) => void;
+  currentQ: number;
+  setCurrentQ: (n: number) => void;
+  showAnswer: boolean;
+  setShowAnswer: (b: boolean) => void;
+  selectedAnswer: "A" | "B" | "C" | "D" | null;
+  setSelectedAnswer: (c: "A" | "B" | "C" | "D" | null) => void;
+  onSubmit: (qIdx: number, choice: "A" | "B" | "C" | "D", isCorrect: boolean) => void;
+  onReset: () => void;
+}) {
+  const totalQ = topic.questions.length;
+  const score = topicScore(topic.id, quiz);
+  const answered = score.answered;
+
+  if (!quizMode) {
+    return (
+      <div className="rounded-md border border-border bg-bg-card/50 p-5 flex flex-col items-center text-center">
+        <Trophy size={40} className="text-accent mb-2" />
+        <div className="text-lg font-semibold">Ready to test yourself?</div>
+        <div className="text-[13px] text-text-muted mt-1">
+          {totalQ} hard exam-style questions on <span className="text-text-primary">{topic.shortLabel}</span>.
+        </div>
+        {answered > 0 && (
+          <div className="mt-3 text-[12px] text-text-secondary">
+            Last attempt: {score.correct} correct of {answered} answered
+          </div>
+        )}
+        <div className="flex items-center gap-3 mt-4">
+          <button
+            type="button"
+            onClick={() => {
+              setQuizMode(true);
+              setCurrentQ(0);
+              setShowAnswer(false);
+              setSelectedAnswer(null);
+            }}
+            className="px-5 py-2 rounded-md bg-accent text-bg-base font-semibold hover:bg-accent-hover transition-colors flex items-center gap-2"
+          >
+            <Sparkles size={16} /> Test Yourself
+          </button>
+          {answered > 0 && (
+            <button
+              type="button"
+              onClick={onReset}
+              className="px-4 py-2 rounded-md border border-border bg-bg-base text-text-secondary hover:bg-bg-hover text-[13px]"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // When switching topics, the parent's reset effect runs *after* the next
+  // render — so `currentQ` can briefly point past the new topic's questions
+  // (e.g. you were on Q15 of a 20-Q topic, switched to a 3-Q topic).
+  // Clamp to a safe index so we never dereference `undefined.answer`.
+  const safeQ =
+    currentQ >= 0 && currentQ < topic.questions.length
+      ? currentQ
+      : 0;
+  const q: Question | undefined = topic.questions[safeQ];
+  if (!q) {
+    // Topic genuinely has no questions yet — render nothing instead of crashing.
+    return (
+      <div className="rounded-md border border-border bg-bg-card/40 p-5 text-center text-text-muted text-[13px]">
+        No questions available for this topic yet.
+      </div>
+    );
+  }
+  const correctLetter = q.answer;
+  const optionLetters: ("A" | "B" | "C" | "D")[] = ["A", "B", "C", "D"];
+
+  // mini chart of correct/incorrect per question
+  const trail = topic.questions.map((_, i) => {
+    const e = quiz[topic.id]?.[i];
+    if (!e) return "pending";
+    return e.correct ? "correct" : "wrong";
+  });
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px] gap-4">
+      {/* Question side */}
+      <div className="rounded-md border border-red-500/30 bg-red-500/[0.04] p-5">
+        <div className="text-[12px] text-text-muted mb-2 flex items-center gap-2">
+          <span className="px-2 py-0.5 rounded bg-bg-base border border-border font-mono">
+            Question {safeQ + 1} / {totalQ}
+          </span>
+        </div>
+        <div className="text-[15px] leading-relaxed mb-4">{q.q}</div>
+
+        <div className="grid gap-2">
+          {optionLetters.map((letter, idx) => {
+            const text = q.options[idx];
+            const isSelected = selectedAnswer === letter;
+            const isCorrect = letter === correctLetter;
+            let cls = "quiz-option text-left p-3 rounded-md border transition-colors flex items-start gap-3";
+            if (!showAnswer) {
+              cls += isSelected ? " border-accent bg-accent/10" : " border-border bg-bg-base hover:bg-bg-hover";
+            } else {
+              if (isCorrect) cls += " border-success bg-success/15 text-text-primary";
+              else if (isSelected && !isCorrect) cls += " border-danger bg-danger/10 text-text-primary";
+              else cls += " border-border bg-bg-base/60 text-text-muted";
+            }
+            return (
+              <button
+                key={letter}
+                type="button"
+                onClick={() => !showAnswer && setSelectedAnswer(letter)}
+                className={cls}
+                disabled={showAnswer}
+                aria-pressed={isSelected}
+              >
+                <span
+                  className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center font-mono text-sm font-semibold ${
+                    showAnswer && isCorrect
+                      ? "bg-success text-bg-base"
+                      : showAnswer && isSelected && !isCorrect
+                      ? "bg-danger text-white"
+                      : isSelected
+                      ? "bg-accent text-bg-base"
+                      : "bg-bg-panel text-text-secondary border border-border"
+                  }`}
+                >
+                  {letter}
+                </span>
+                <span className="text-[13.5px] leading-snug text-text-primary text-left flex-1">
+                  {text.replace(/^[A-D]\.\s*/, "")}
+                </span>
+                {showAnswer && isCorrect && <CheckCircle2 size={18} className="text-success shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+
+        {showAnswer ? (
+          <div className="mt-4 rounded-md border border-border bg-bg-base p-4">
+            <div className="text-[12px] font-semibold mb-2 flex items-center gap-2">
+              <CheckCircle2 size={14} className="text-success" />
+              Explanation
+            </div>
+            <p className="text-[13px] leading-relaxed text-text-secondary whitespace-pre-line">{q.explanation}</p>
+          </div>
+        ) : (
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (!selectedAnswer) return;
+                setShowAnswer(true);
+                onSubmit(currentQ, selectedAnswer, selectedAnswer === correctLetter);
+              }}
+              disabled={!selectedAnswer}
+              className={`px-4 py-2 rounded-md font-semibold text-sm transition-colors ${
+                selectedAnswer
+                  ? "bg-accent text-bg-base hover:bg-accent-hover"
+                  : "bg-bg-base text-text-muted border border-border cursor-not-allowed"
+              }`}
+            >
+              Reveal Answer
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuizMode(false)}
+              className="text-[12px] text-text-muted hover:text-text-primary underline-offset-2 hover:underline"
+            >
+              Exit quiz
+            </button>
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => {
+              if (currentQ > 0) {
+                setCurrentQ(currentQ - 1);
+                const prev = quiz[topic.id]?.[currentQ - 1];
+                setShowAnswer(!!prev);
+                setSelectedAnswer(prev?.selected ?? null);
+              }
+            }}
+            disabled={currentQ === 0}
+            className="px-3 py-1.5 rounded-md border border-border bg-bg-base text-[13px] text-text-secondary disabled:opacity-40 hover:bg-bg-hover"
+          >
+            ← Previous
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (currentQ < totalQ - 1) {
+                setCurrentQ(currentQ + 1);
+                const next = quiz[topic.id]?.[currentQ + 1];
+                setShowAnswer(!!next);
+                setSelectedAnswer(next?.selected ?? null);
+              } else {
+                setQuizMode(false);
+              }
+            }}
+            className="px-3 py-1.5 rounded-md bg-accent text-bg-base text-[13px] font-semibold hover:bg-accent-hover"
+          >
+            {currentQ < totalQ - 1 ? "Next →" : "Finish"}
+          </button>
+        </div>
+      </div>
+
+      {/* Score tracker side */}
+      <aside className="rounded-md border border-border bg-bg-card/40 p-4 space-y-3 h-fit sticky top-[60px]">
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-text-muted">Score</div>
+          <div className="text-2xl font-bold text-accent">
+            {score.correct} <span className="text-text-muted text-base">/ {totalQ}</span>
+          </div>
+          <div className="text-[11px] text-text-muted">{answered} answered</div>
+        </div>
+
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-text-muted mb-1">Progress</div>
+          <div className="grid grid-cols-10 gap-1">
+            {topic.questions.map((_, i) => {
+              const e = quiz[topic.id]?.[i];
+              const cls =
+                i === currentQ
+                  ? "bg-accent ring-2 ring-accent/40"
+                  : e
+                  ? e.correct
+                    ? "bg-success"
+                    : "bg-danger"
+                  : "bg-bg-base border border-border";
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  aria-label={`Go to question ${i + 1}`}
+                  onClick={() => {
+                    setCurrentQ(i);
+                    const e2 = quiz[topic.id]?.[i];
+                    setShowAnswer(!!e2);
+                    setSelectedAnswer(e2?.selected ?? null);
+                  }}
+                  className={`w-full aspect-square rounded ${cls}`}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-text-muted mb-1">Result Trail</div>
+          <div className="flex flex-wrap gap-0.5">
+            {trail.map((r, i) => (
+              <span
+                key={i}
+                className={`inline-block w-2 h-3 rounded-sm ${
+                  r === "correct" ? "bg-success" : r === "wrong" ? "bg-danger" : "bg-bg-base border border-border"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="pt-2 border-t border-border">
+          <div className="text-[11px] uppercase tracking-wide text-text-muted">Accuracy</div>
+          <div className="text-lg font-semibold">
+            {answered === 0 ? "—" : `${Math.round((score.correct / answered) * 100)}%`}
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}

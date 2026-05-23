@@ -1,0 +1,170 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: #0f1419;
+  color: #e6edf3;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  scroll-behavior: smooth;
+}
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #1a2332;
+}
+::-webkit-scrollbar-thumb {
+  background: #3d4d68;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4d5d78;
+}
+
+/* ---------- Code block (legacy fallback) ---------- */
+.code-block {
+  background: #0d1117;
+  border: 1px solid #2d3a4f;
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ---------- Custom syntax-highlighter colors ---------- */
+.tok-kw     { color: #ff9900; }          /* keywords / JSON keys */
+.tok-str    { color: #a5d6ff; }          /* string literals */
+.tok-num    { color: #79c0ff; }          /* numbers */
+.tok-com    { color: #6e7681; font-style: italic; } /* comments */
+.tok-bool   { color: #f97583; }          /* booleans / null */
+.tok-punct  { color: #e6edf3; }          /* brackets / punctuation */
+.tok-aws    { color: #ffa657; font-weight: 600; }   /* AWS service names */
+.tok-flag   { color: #d2a8ff; }          /* CLI flags --foo */
+.tok-cmd    { color: #ff9900; font-weight: 600; }   /* CLI command word */
+
+/* ---------- SVG diagrams responsive ---------- */
+.diagram-container svg {
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  display: block;
+  margin: 0 auto;
+}
+
+/* ---------- Quiz focus ring ---------- */
+.quiz-option:focus-visible {
+  outline: 2px solid #ff9900;
+  outline-offset: 2px;
+}
+
+/* ---------- Glass-morphism for sticky tab bar ---------- */
+.glass {
+  background: rgba(26, 35, 50, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(45, 58, 79, 0.6);
+}
+
+/* ---------- Animations ---------- */
+@keyframes panelSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.panel-enter {
+  animation: panelSlideIn 220ms cubic-bezier(0.2, 0.65, 0.2, 1);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in { animation: fadeIn 200ms ease-out; }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slideUp 250ms ease-out; }
+
+/* ---------- Gradient panel border ---------- */
+.gradient-border-blue   { border-image: linear-gradient(180deg, #3b82f6, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-purple { border-image: linear-gradient(180deg, #a855f7, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-orange { border-image: linear-gradient(180deg, #ff9900, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-green  { border-image: linear-gradient(180deg, #10b981, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-yellow { border-image: linear-gradient(180deg, #f59e0b, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-red    { border-image: linear-gradient(180deg, #ef4444, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+
+/* ---------- Tab drag/drop visuals ---------- */
+.tab-drop-target {
+  outline: 2px dashed #ff9900;
+  outline-offset: -2px;
+}
+.tab-dragging {
+  opacity: 0.4;
+}
+
+/* ---------- Tooltips (pure CSS) ---------- */
+.tip {
+  position: relative;
+}
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: #1a2332;
+  color: #e6edf3;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #2d3a4f;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+  z-index: 50;
+}
+.tip:hover::after,
+.tip:focus-visible::after {
+  opacity: 1;
+}
+.tip-bottom::after {
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+}
+
+/* ---------- Highlight callout (TL;DR) ---------- */
+.tldr-callout {
+  border-left: 4px solid #ff9900;
+  background: linear-gradient(90deg, rgba(255, 153, 0, 0.12), rgba(255, 153, 0, 0));
+  padding: 12px 16px;
+  border-radius: 4px;
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter,
+  .animate-fade-in,
+  .animate-slide-up {
+    animation: none;
+  }
+}
