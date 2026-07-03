@@ -45,17 +45,25 @@ export async function POST(req: NextRequest) {
 
   const displayName = user.displayName;
 
-  const token = await signSession({ username, displayName });
+  try {
+    const token = await signSession({ username, displayName });
 
-  const res = NextResponse.json({ username, displayName });
-  res.cookies.set({
-    name: COOKIE_NAME,
-    value: token,
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-  });
-  return res;
+    const res = NextResponse.json({ username, displayName });
+    res.cookies.set({
+      name: COOKIE_NAME,
+      value: token,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: SESSION_MAX_AGE_SECONDS,
+    });
+    return res;
+  } catch (err) {
+    console.error("login: failed to create session", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create session" },
+      { status: 500 }
+    );
+  }
 }
