@@ -3,94 +3,34 @@
 // Covers slides 1–120 of Stephane Maarek's course
 // ============================================================
 
-export type Question = {
-  q: string;
-  options: [string, string, string, string];
-  answer: "A" | "B" | "C" | "D";
-  explanation: string;
-};
+// Types + shared SVG fragments now live in ./topics/shared.ts.
+// We import them for local use and re-export so `@/lib/topics` keeps the
+// exact same public surface (backward compatible).
+import { svgDefs } from "./topics/shared";
+import type { Topic, SectionInfo } from "./topics/shared";
 
-export type CodeExample = {
-  language: string;
-  title: string;
-  code: string;
-  /** optional tab label when multiple examples appear together */
-  tab?: string;
-};
+export type {
+  Question,
+  CodeExample,
+  Subtopic,
+  KeyFact,
+  DiagramLegendItem,
+  QuickReference,
+  Domain,
+  Topic,
+  SectionInfo,
+} from "./topics/shared";
 
-/** A structured Beginner-tab subtopic — heading + bullet list */
-export type Subtopic = {
-  heading: string;
-  bullets: { icon: string; text: string }[]; // icon = emoji or short word, text supports **bold**
-};
-
-/** A small fact card shown in the Beginner tab grid */
-export type KeyFact = {
-  label: string;
-  value: string;
-  /** optional emoji or lucide-react icon name */
-  icon?: string;
-};
-
-/** A legend item that explains one component shown in the architecture SVG */
-export type DiagramLegendItem = {
-  color: string;
-  label: string;
-  description: string;
-};
-
-/** Side panel content on the Beginner tab — the "Quick Reference" card */
-export type QuickReference = {
-  title: string;
-  icon?: string; // emoji or lucide name
-  bullets: string[]; // supports **bold**
-  analogyBrief?: string;
-};
-
-export type Domain =
-  | "Identity"
-  | "Compute"
-  | "Storage"
-  | "Networking"
-  | "Security"
-  | "Monitoring"
-  | "Foundations";
-
-export type Topic = {
-  id: string;
-  title: string;
-  shortLabel: string;
-  section: string;
-  domain: Domain;
-  /** Long-form explanation. Used as a fallback when `tldr` / `subtopics` aren't provided. */
-  explanation: string;
-  analogy: string;
-  diagram: string; // inline SVG
-  codeExample: CodeExample;
-  problemStatement: string;
-  questions: Question[];
-
-  // ---- NEW optional structured fields (Beginner tab can use these
-  //      instead of the long prose `explanation` for a cleaner render). ----
-  /** 1–3 sentence summary shown in the orange callout at the top of Beginner. */
-  tldr?: string;
-  /** Structured subtopic blocks, each with a heading and 3–6 bullets. */
-  subtopics?: Subtopic[];
-  /** Small fact cards rendered in a 2-column grid at the bottom of Beginner. */
-  keyFacts?: KeyFact[];
-  /** Side card content rendered in the 35% column of Beginner. */
-  quickReference?: QuickReference;
-  /** Multiple code examples (CLI / JSON / Python …) — rendered as inner tabs. */
-  codeExamples?: CodeExample[];
-  /** Legend rows shown below the architecture SVG. */
-  diagramLegend?: DiagramLegendItem[];
-};
-
-export type SectionInfo = {
-  id: string;
-  title: string;
-  topicIds: string[];
-};
+// ---- New sections (course pages 118–414), authored in per-section modules ----
+import { haScalingTopics } from "./topics/ha-scaling";
+import { databaseTopics } from "./topics/databases";
+import { route53Topics } from "./topics/route53";
+import { solutionsArchTopics } from "./topics/solutions-architectures";
+import { s3Topics } from "./topics/s3";
+import { s3AdvancedTopics } from "./topics/s3-advanced";
+import { cloudfrontGaTopics } from "./topics/cloudfront-ga";
+import { storageExtrasTopics } from "./topics/storage-extras";
+import { messagingTopics } from "./topics/messaging";
 
 // ============================================================
 // SECTIONS
@@ -168,21 +108,110 @@ export const sections: SectionInfo[] = [
       "ebs-vs-efs",
     ],
   },
+  // ---- New sections (course pages 118–414) ----
+  {
+    id: "ha-scaling",
+    title: "High Availability & Scalability",
+    topicIds: [
+      "scalability-high-availability",
+      "elastic-load-balancing",
+      "clb-alb",
+      "nlb-gwlb",
+      "elb-sticky-ssl",
+      "auto-scaling-groups",
+      "asg-scaling-policies",
+    ],
+  },
+  {
+    id: "databases",
+    title: "Databases — RDS, Aurora & ElastiCache",
+    topicIds: [
+      "rds-overview",
+      "rds-read-replicas",
+      "rds-multi-az-custom",
+      "amazon-aurora",
+      "aurora-advanced",
+      "rds-aurora-backups-security",
+      "amazon-elasticache",
+    ],
+  },
+  {
+    id: "route53",
+    title: "Amazon Route 53 — DNS",
+    topicIds: [
+      "dns-fundamentals",
+      "route53-records",
+      "route53-cname-alias",
+      "route53-routing-policies",
+      "route53-health-checks",
+      "route53-registrar-hybrid",
+    ],
+  },
+  {
+    id: "solutions-architectures",
+    title: "Classic Solutions Architectures",
+    topicIds: [
+      "sa-stateless-web-app",
+      "sa-stateful-web-app",
+      "sa-wordpress",
+      "instantiating-apps-beanstalk",
+    ],
+  },
+  {
+    id: "amazon-s3",
+    title: "Amazon S3",
+    topicIds: [
+      "s3-buckets-objects",
+      "s3-security-policies",
+      "s3-versioning-replication",
+      "s3-static-website",
+      "s3-storage-classes",
+    ],
+  },
+  {
+    id: "amazon-s3-advanced",
+    title: "Amazon S3 — Advanced & Security",
+    topicIds: [
+      "s3-lifecycle-analytics",
+      "s3-event-notifications",
+      "s3-performance",
+      "s3-encryption",
+      "s3-advanced-security",
+    ],
+  },
+  {
+    id: "cloudfront-ga",
+    title: "CloudFront & Global Accelerator",
+    topicIds: [
+      "cloudfront-overview",
+      "cloudfront-caching-geo",
+      "global-accelerator",
+    ],
+  },
+  {
+    id: "storage-extras",
+    title: "AWS Storage Extras",
+    topicIds: [
+      "aws-snowball",
+      "amazon-fsx",
+      "storage-gateway",
+      "transfer-family-datasync",
+    ],
+  },
+  {
+    id: "messaging",
+    title: "Integration & Messaging — SQS, SNS & Kinesis",
+    topicIds: [
+      "amazon-sqs",
+      "sqs-fifo",
+      "amazon-sns",
+      "sns-sqs-fanout",
+      "amazon-kinesis",
+    ],
+  },
 ];
 
-// ============================================================
-// SVG DIAGRAM HELPERS — shared style fragments
-// ============================================================
-const svgDefs = `
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#ff9900"/>
-    </marker>
-    <marker id="arrow-mute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
-    </marker>
-  </defs>
-`;
+// SVG diagram helpers (`svgDefs`) are imported from ./topics/shared above.
 
 // ============================================================
 // TOPICS
@@ -4867,4 +4896,17 @@ aws efs put-lifecycle-configuration \\
       },
     ],
   },
+
+  // =================================================================
+  // NEW SECTIONS (course pages 118–414) — authored in lib/topics/*
+  // =================================================================
+  ...haScalingTopics,
+  ...databaseTopics,
+  ...route53Topics,
+  ...solutionsArchTopics,
+  ...s3Topics,
+  ...s3AdvancedTopics,
+  ...cloudfrontGaTopics,
+  ...storageExtrasTopics,
+  ...messagingTopics,
 ];
