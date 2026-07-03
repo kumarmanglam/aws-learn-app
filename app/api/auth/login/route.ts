@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebase-admin";
-import { verifyPassword } from "@/lib/passwords";
 import {
   COOKIE_NAME,
   SESSION_MAX_AGE_SECONDS,
   signSession,
 } from "@/lib/session";
 
-export const runtime = "nodejs"; // bcryptjs + firebase-admin need Node, not Edge
+export const runtime = "nodejs";
 
 type Body = { username?: unknown; password?: unknown };
+
+const USERS: Record<string, { password: string; displayName: string }> = {
+  "kumar-user": { password: "securehigh", displayName: "kumar-user" },
+  "kumar2-user": { password: "securehigh", displayName: "kumar2-user" },
+};
 
 export async function POST(req: NextRequest) {
   let body: Body;
@@ -31,8 +34,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Lookup user
-  const snap = await db.collection("users").doc(username).get();
-  if (!snap.exists) {
+  const user = USERS[username];
+  if (!user || user.password !== password) {
     // Same response shape for "no such user" and "wrong password" to avoid leak.
     return NextResponse.json(
       { error: "Invalid credentials" },
@@ -40,19 +43,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const data = snap.data() as
-    | { passwordHash?: string; displayName?: string }
-    | undefined;
-
-  const hash = data?.passwordHash;
-  const displayName = data?.displayName ?? username;
-
-  if (!hash || !(await verifyPassword(password, hash))) {
-    return NextResponse.json(
-      { error: "Invalid credentials" },
-      { status: 401 }
-    );
-  }
+  const displayName = user.displayName;
 
   const token = await signSession({ username, displayName });
 
