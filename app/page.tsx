@@ -41,16 +41,31 @@ import {
   Star,
   ChevronsRight,
   GripVertical,
+  Cloud,
+  Layout,
+  Server,
+  Boxes,
   type LucideIcon,
 } from "lucide-react";
 import {
   topics,
   sections,
+  courses,
   type Topic,
   type Question,
   type CodeExample,
   type Subtopic,
 } from "@/lib/topics";
+
+// Resolve a CourseInfo.icon name to a lucide-react component (fallback: BookOpen).
+const COURSE_ICONS: Record<string, LucideIcon> = {
+  Cloud,
+  Layout,
+  Server,
+  Sparkles,
+  Network,
+  Boxes,
+};
 
 // ============================================================
 // Sharded server sync (Firebase via /api/progress)
@@ -68,6 +83,7 @@ type AppState = {
   quiz: QuizState;
   loginDates: string[];
   expanded: Record<string, boolean>;
+  selectedCourseId: string;
   selectedTopicId: string;
   leftCollapsed: boolean;
   rightCollapsed: boolean;
@@ -92,13 +108,30 @@ const DEFAULT_TAB_ORDER: TabKey[] = [
   "quiz",
 ];
 
+/** The section ids owned by a course (falls back to the first course). */
+function courseSectionIds(courseId: string): string[] {
+  const c = courses.find((x) => x.id === courseId) ?? courses[0];
+  return c?.sectionIds ?? [];
+}
+
+/** First topic id of a course (its first section's first topic), if any. */
+function firstTopicOfCourse(courseId: string): string | undefined {
+  for (const sid of courseSectionIds(courseId)) {
+    const sec = sections.find((s) => s.id === sid);
+    if (sec?.topicIds.length) return sec.topicIds[0];
+  }
+  return undefined;
+}
+
 function defaultState(): AppState {
+  const firstCourseId = courses[0]?.id ?? "";
   return {
     visited: {},
     quiz: {},
     loginDates: [],
-    expanded: { [sections[0]?.id ?? ""]: true },
-    selectedTopicId: topics[0]?.id ?? "",
+    expanded: { [courseSectionIds(firstCourseId)[0] ?? ""]: true },
+    selectedCourseId: firstCourseId,
+    selectedTopicId: firstTopicOfCourse(firstCourseId) ?? topics[0]?.id ?? "",
     leftCollapsed: false,
     rightCollapsed: false,
     tabOrder: DEFAULT_TAB_ORDER,
@@ -141,6 +174,13 @@ function mergeFromSections(
     topicDone: progress.topicDone ?? base.topicDone,
     tabsDone: progress.tabsDone ?? base.tabsDone,
     quiz: quizDoc.answers ?? base.quiz,
+    selectedCourseId:
+      typeof (ui as { selectedCourseId?: string }).selectedCourseId === "string" &&
+      courses.some(
+        (c) => c.id === (ui as { selectedCourseId?: string }).selectedCourseId
+      )
+        ? ((ui as { selectedCourseId?: string }).selectedCourseId as string)
+        : base.selectedCourseId,
     expanded:
       ui.expanded && Object.keys(ui.expanded).length
         ? ui.expanded
@@ -271,9 +311,10 @@ function nextLevelXp(level: number) {
   return level * 250;
 }
 
-function domainStrengths(quiz: QuizState) {
+function domainStrengths(quiz: QuizState, topicIds?: Set<string>) {
   const buckets: Record<string, { c: number; t: number }> = {};
   for (const t of topics) {
+    if (topicIds && !topicIds.has(t.id)) continue;
     if (!buckets[t.domain]) buckets[t.domain] = { c: 0, t: 0 };
     const s = topicScore(t.id, quiz);
     buckets[t.domain].c += s.correct;
@@ -898,6 +939,7 @@ export default function Page() {
         tabOrder: state.tabOrder,
         openTabs: state.openTabs,
         collapsedPanels: state.collapsedPanels,
+        selectedCourseId: state.selectedCourseId,
       },
       1500
     );
@@ -908,6 +950,7 @@ export default function Page() {
     state.tabOrder,
     state.openTabs,
     state.collapsedPanels,
+    state.selectedCourseId,
     hydrated,
     syncUi,
   ]);
@@ -965,14 +1008,32 @@ export default function Page() {
   const xp = useMemo(() => xpFromQuiz(state.quiz), [state.quiz]);
   const level = levelFromXp(xp);
   const streak = useMemo(() => computeStreak(state.loginDates), [state.loginDates]);
-  const radarData = useMemo(() => domainStrengths(state.quiz), [state.quiz]);
+
+  // -------- course scoping (Course → Section → Topic) --------
+  const activeCourse = useMemo(
+    () => courses.find((c) => c.id === state.selectedCourseId) ?? courses[0],
+    [state.selectedCourseId]
+  );
+  const courseSections = useMemo(() => {
+    const ids = new Set(activeCourse?.sectionIds ?? []);
+    return sections.filter((s) => ids.has(s.id));
+  }, [activeCourse]);
+  const courseTopicIds = useMemo(
+    () => new Set(courseSections.flatMap((s) => s.topicIds)),
+    [courseSections]
+  );
+
+  const radarData = useMemo(
+    () => domainStrengths(state.quiz, courseTopicIds),
+    [state.quiz, courseTopicIds]
+  );
   const revisions = useMemo(() => recommendedRevisions(state.quiz), [state.quiz]);
 
-  // -------- search filter --------
+  // -------- search filter (scoped to the active course) --------
   const filteredSections = useMemo(() => {
-    if (!search.trim()) return sections;
+    if (!search.trim()) return courseSections;
     const q = search.toLowerCase();
-    return sections
+    return courseSections
       .map((sec) => {
         const matchingIds = sec.topicIds.filter((id) => {
           const t = topics.find((x) => x.id === id);
@@ -986,7 +1047,7 @@ export default function Page() {
         return matchingIds.length ? { ...sec, topicIds: matchingIds } : null;
       })
       .filter(Boolean) as typeof sections;
-  }, [search]);
+  }, [search, courseSections]);
 
   // -------- helpers --------
   const isPanelOpen = (k: TabKey) => state.openTabs.includes(k);
@@ -1043,7 +1104,35 @@ export default function Page() {
     setDropTargetTab(null);
   };
 
+  // Switch the active course: move the topic selection into the new course and
+  // pre-expand its first section (one atomic update).
+  const selectCourse = (cid: string) => {
+    if (cid === state.selectedCourseId) return;
+    setState((s) => {
+      const firstSec = courseSectionIds(cid)[0] ?? "";
+      const firstTopic = firstTopicOfCourse(cid);
+      return {
+        ...s,
+        selectedCourseId: cid,
+        selectedTopicId: firstTopic ?? s.selectedTopicId,
+        expanded: firstSec ? { ...s.expanded, [firstSec]: true } : s.expanded,
+      };
+    });
+  };
+
   // -------- render --------
+  // Empty-course guard: a course whose content hasn't been authored yet shows a
+  // placeholder (with a switcher) instead of leaking a topic from another course.
+  if (courseSections.length === 0) {
+    return (
+      <EmptyCourseScreen
+        activeCourse={activeCourse}
+        selectedCourseId={state.selectedCourseId}
+        onSelectCourse={selectCourse}
+      />
+    );
+  }
+
   if (!selectedTopic) {
     return (
       <div className="flex items-center justify-center h-screen text-text-muted">
@@ -1178,6 +1267,8 @@ export default function Page() {
           collapsed={state.leftCollapsed}
           setCollapsed={(v) => setState((s) => ({ ...s, leftCollapsed: v }))}
           filteredSections={filteredSections}
+          selectedCourseId={state.selectedCourseId}
+          onSelectCourse={selectCourse}
           expanded={state.expanded}
           setExpanded={(eid) =>
             setState((s) => ({
@@ -1438,6 +1529,7 @@ export default function Page() {
         <RightSidebar
           collapsed={state.rightCollapsed}
           setCollapsed={(v) => setState((s) => ({ ...s, rightCollapsed: v }))}
+          courseSections={courseSections}
           radarData={radarData}
           gScore={gScore}
           xp={xp}
@@ -1453,12 +1545,85 @@ export default function Page() {
 }
 
 // ============================================================
+// Course Switcher — pill row of courses (Course → Section → Topic)
+// ============================================================
+function CourseSwitcher({
+  selectedCourseId,
+  onSelect,
+}: {
+  selectedCourseId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="px-3 pb-3 flex flex-wrap gap-1.5 border-b border-border">
+      {courses.map((c) => {
+        const Icon = COURSE_ICONS[c.icon] ?? BookOpen;
+        const active = c.id === selectedCourseId;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onSelect(c.id)}
+            title={c.description ?? c.title}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+              active
+                ? "bg-accent/15 border-accent/40 text-accent"
+                : "bg-bg-base border-border text-text-muted hover:text-text-primary hover:bg-bg-hover"
+            }`}
+          >
+            <Icon size={13} className="shrink-0" />
+            <span className="truncate">{c.title}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// Empty Course Screen — shown for a course whose content isn't authored yet
+// ============================================================
+function EmptyCourseScreen({
+  activeCourse,
+  selectedCourseId,
+  onSelectCourse,
+}: {
+  activeCourse: (typeof courses)[number] | undefined;
+  selectedCourseId: string;
+  onSelectCourse: (id: string) => void;
+}) {
+  const Icon = activeCourse ? COURSE_ICONS[activeCourse.icon] ?? BookOpen : BookOpen;
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-6 bg-bg-base text-text-primary px-4">
+      <div className="flex flex-col items-center gap-3 text-center max-w-md">
+        <div className="w-14 h-14 rounded-xl bg-accent/15 flex items-center justify-center text-accent">
+          <Icon size={28} />
+        </div>
+        <h1 className="text-xl font-semibold">
+          {activeCourse?.title ?? "Course"} — content coming soon
+        </h1>
+        <p className="text-sm text-text-muted">
+          {activeCourse?.description ??
+            "This course doesn't have any topics yet."}{" "}
+          Pick another course to keep learning.
+        </p>
+      </div>
+      <div className="w-full max-w-md rounded-lg border border-border bg-bg-panel/60">
+        <CourseSwitcher selectedCourseId={selectedCourseId} onSelect={onSelectCourse} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // Left Sidebar
 // ============================================================
 function LeftSidebar({
   collapsed,
   setCollapsed,
   filteredSections,
+  selectedCourseId,
+  onSelectCourse,
   expanded,
   setExpanded,
   selectedTopicId,
@@ -1472,6 +1637,8 @@ function LeftSidebar({
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
   filteredSections: typeof sections;
+  selectedCourseId: string;
+  onSelectCourse: (id: string) => void;
   expanded: Record<string, boolean>;
   setExpanded: (id: string) => void;
   selectedTopicId: string;
@@ -1495,7 +1662,7 @@ function LeftSidebar({
           <PanelLeftOpen size={16} />
         </button>
         <div className="flex-1 overflow-y-auto py-2">
-          {sections.map((sec, i) => (
+          {filteredSections.map((sec, i) => (
             <button
               key={sec.id}
               type="button"
@@ -1531,6 +1698,8 @@ function LeftSidebar({
         </button>
       </div>
 
+      <CourseSwitcher selectedCourseId={selectedCourseId} onSelect={onSelectCourse} />
+
       <nav className="flex-1">
         {filteredSections.map((sec) => {
           const pct = sectionProgressPct(sec.id, visited);
@@ -1563,7 +1732,7 @@ function LeftSidebar({
                 </span>
               </button>
               {isExpanded && (
-                <ul className="ml-2 my-1 border-l border-border">
+                <ul className="ml-2 my-1 border-l border-border pl-2">
                   {sec.topicIds.map((tid) => {
                     const t = topics.find((x) => x.id === tid);
                     if (!t) return null;
@@ -1575,7 +1744,7 @@ function LeftSidebar({
                         <button
                           type="button"
                           onClick={() => setSelectedTopicId(tid)}
-                          className={`w-full text-left flex items-center gap-1.5 px-3 py-1.5 ml-2 my-0.5 rounded text-[13px] transition-colors ${
+                          className={`w-full text-left flex items-center gap-1.5 px-3 py-1.5 my-0.5 rounded text-[13px] transition-colors ${
                             isActive
                               ? "bg-accent/15 text-accent font-medium"
                               : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
@@ -1627,6 +1796,7 @@ function LeftSidebar({
 function RightSidebar({
   collapsed,
   setCollapsed,
+  courseSections,
   radarData,
   gScore,
   xp,
@@ -1638,6 +1808,7 @@ function RightSidebar({
 }: {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
+  courseSections: typeof sections;
   radarData: { domain: string; score: number }[];
   gScore: { correct: number; total: number };
   xp: number;
@@ -1708,7 +1879,7 @@ function RightSidebar({
         {/* Topic completion */}
         <div className="space-y-2">
           <div className="text-xs font-semibold text-text-secondary">Topic Completion</div>
-          {sections.map((sec) => {
+          {courseSections.map((sec) => {
             const pct = sectionProgressPct(sec.id, state.visited);
             return (
               <div key={sec.id}>

@@ -1,0 +1,104 @@
+================================================================
+ aws-learn-app — Multi-course expansion: STATUS & PENDING WORK
+ Branch: feat/saa-topics-118-414
+ Last updated: 2026-07-05
+================================================================
+
+WHAT THIS CHANGE DID
+--------------------
+Turned the single AWS course app into a MULTI-COURSE platform and added
+5 new courses whose content was adapted (and upgraded to this app's rich
+standard) from the reference app at C:\Users\...\Downloads\learn-main,
+plus freshly authored Networking and System Design content.
+
+Hierarchy is now: Course -> Section -> Topic.
+Progress is unchanged (still keyed by globally-unique topicId in Firestore),
+so no backend/DB migration is required.
+
+
+DEPLOY READINESS  ✅ (with one env prerequisite)
+------------------------------------------------
+- `npx tsc --noEmit`  -> PASSES (0 errors)
+- `next build`        -> "✓ Compiled successfully" + lint/type-check PASS
+- No duplicate topic ids across all courses (verified)
+
+PREREQUISITE FOR A SUCCESSFUL PRODUCTION BUILD/DEPLOY:
+  The build's final "collecting page data" step needs Firebase Admin creds.
+  This is a PRE-EXISTING app requirement (same on master), NOT introduced by
+  this change. Set these in the deploy environment (and .env.local locally):
+      FIREBASE_PROJECT_ID
+      FIREBASE_CLIENT_EMAIL
+      FIREBASE_PRIVATE_KEY
+  Without them, /api/progress and /api/seed fail to prerender and `next build`
+  errors out at page-data collection even though the app compiles fine.
+
+NOTE: Nothing has been committed yet. Commit the branch when ready
+      (do NOT push per project policy; open a PR instead).
+
+
+COURSES SHIPPING IN THIS BUILD
+------------------------------
+1. AWS / Cloud       — existing content, unchanged
+2. Frontend          — 8 topics  (JavaScript Core: 6, Async & Event Loop: 2)
+3. Backend           — 15 topics (Python Foundations: 6, Advanced Python: 6, Containers: 3)
+4. Networking        — 8 topics  (Web Protocols: 3, DNS & TLS: 2, Delivery & Scale: 3)  [fresh-authored]
+5. System Design     — 9 topics  (Fundamentals: 3, Data & Storage: 3, Scaling Patterns: 3) [fresh-authored]
+6. AI Engineering    — 25 topics across 5 of 6 sections (see PENDING)
+                       AI Fundamentals: 6, Prompt Engineering: 5,
+                       LLM Integration: 4, RAG: 7, LangChain: 3
+   => 65 new topics total, each with the full standard (TL;DR, subtopics,
+      key facts, quick reference, SVG diagram, code examples, 5-6 quiz Qs).
+
+
+PENDING WORK
+============
+
+[P1] AI Engineering — "AI Agents" section (the 6th section) is NOT authored.
+     Its authoring agent hit the account session limit before writing the file.
+     - Create: lib/topics/ai-agents.ts
+       export const aiAgentsTopics: Topic[]  (import { svgDefs, type Topic } from "./shared")
+     - 8 topics (domain "AI", section "AI Agents"):
+         ai-agents-fundamentals, ai-tool-use, ai-agent-architectures,
+         ai-agentic-memory, ai-agent-evaluation, ai-production-agents,
+         ai-multi-agent, ai-agent-limitations
+       (source: learn-main/src/data/module8-agents.js, upgraded to standard)
+     - Then WIRE IT UP in lib/topics.ts (3 spots):
+         1) import { aiAgentsTopics } from "./topics/ai-agents";
+         2) add SectionInfo { id:"ai-agents", title:"AI Agents", topicIds:[...8 ids] }
+            in the `sections` array (after the "langchain" section)
+         3) spread `...aiAgentsTopics` into the `topics` array
+         4) add "ai-agents" back to the AI course's `sectionIds` in `courses[]`
+            (a comment marks exactly where).
+     Until done, the app simply shows the AI course with 5 sections — no errors.
+
+[P2] Content QA pass (recommended, optional for deploy).
+     The 65 new topics were authored by parallel agents to a strict template
+     and all type-check, but were not individually human-reviewed for factual
+     nuance. Spot-check especially the freshly-authored (no source) courses:
+     Networking and System Design. AI/LLM code samples use current Claude
+     model ids (claude-opus-4-8, claude-sonnet-5, claude-haiku-4-5) and the
+     Messages API.
+
+[P3] Cosmetic: the left-sidebar search placeholder still reads
+     "Search IAM, EC2, S3..." (AWS-specific). Optional: make it generic.
+     Location: app/page.tsx (search input).
+
+
+KEY FILES TOUCHED
+-----------------
+- lib/topics/shared.ts     : added CourseInfo type; extended Domain union
+                             (+ Frontend, Backend, AI, SystemDesign)
+- lib/topics.ts            : added `courses: CourseInfo[]`; imported/spread new
+                             topic modules; added new SectionInfo entries
+- app/page.tsx             : course state + persistence, course-scoping memos,
+                             CourseSwitcher UI, EmptyCourseScreen guard, scoped
+                             sidebar/search/dashboard/radar
+- lib/topics/frontend-*.ts, backend-*.ts, networking-*.ts,
+  system-design-*.ts, ai-*.ts : new per-section content modules
+
+HOW COURSE SCOPING WORKS (for future edits)
+-------------------------------------------
+`courses[]` (in lib/topics.ts) lists each course's section ids in order.
+page.tsx derives `courseSections`/`courseTopicIds` from the selected course
+and feeds them to the sidebar, search, dashboard completion, and radar.
+Adding a section to a course = add its id to that course's `sectionIds`.

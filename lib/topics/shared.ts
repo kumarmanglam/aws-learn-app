@@ -63,7 +63,12 @@ export type Domain =
   | "Foundations"
   // ---- Added for course pages 118–414 (new content areas) ----
   | "Database"
-  | "Integration";
+  | "Integration"
+  // ---- Added for multi-course support (Frontend / Backend / AI / System Design) ----
+  | "Frontend"
+  | "Backend"
+  | "AI"
+  | "SystemDesign";
 
 export type Topic = {
   id: string;
@@ -99,6 +104,20 @@ export type SectionInfo = {
   id: string;
   title: string;
   topicIds: string[];
+};
+
+/**
+ * A top-level course that groups a set of sections. Courses are the highest
+ * level of the content hierarchy: Course → Section → Topic. Progress stays
+ * keyed by globally-unique `topicId`, so adding courses requires no backend
+ * schema change.
+ */
+export type CourseInfo = {
+  id: string; // "aws" | "frontend" | ...  (selection + persistence key)
+  title: string;
+  icon: string; // lucide-react icon NAME (string) or emoji; resolved in the UI
+  description?: string;
+  sectionIds: string[]; // ordered list of SectionInfo.id values owned by this course
 };
 
 // ============================================================

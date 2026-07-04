@@ -7,7 +7,7 @@
 // We import them for local use and re-export so `@/lib/topics` keeps the
 // exact same public surface (backward compatible).
 import { svgDefs } from "./topics/shared";
-import type { Topic, SectionInfo } from "./topics/shared";
+import type { Topic, SectionInfo, CourseInfo } from "./topics/shared";
 
 export type {
   Question,
@@ -19,6 +19,7 @@ export type {
   Domain,
   Topic,
   SectionInfo,
+  CourseInfo,
 } from "./topics/shared";
 
 // ---- New sections (course pages 118–414), authored in per-section modules ----
@@ -31,6 +32,106 @@ import { s3AdvancedTopics } from "./topics/s3-advanced";
 import { cloudfrontGaTopics } from "./topics/cloudfront-ga";
 import { storageExtrasTopics } from "./topics/storage-extras";
 import { messagingTopics } from "./topics/messaging";
+
+// ---- Frontend course ----
+import { frontendCoreTopics } from "./topics/frontend-core";
+import { frontendAsyncTopics } from "./topics/frontend-async";
+
+// ---- Backend course ----
+import { backendPyFoundationsTopics } from "./topics/backend-python-foundations";
+import { backendPyAdvancedTopics } from "./topics/backend-python-advanced";
+import { backendContainersTopics } from "./topics/backend-containers";
+
+// ---- Networking course ----
+import { networkingProtocolsTopics } from "./topics/networking-protocols";
+import { networkingDnsTlsTopics } from "./topics/networking-dns-tls";
+import { networkingDeliveryTopics } from "./topics/networking-delivery";
+
+// ---- System Design course ----
+import { systemDesignFundamentalsTopics } from "./topics/system-design-fundamentals";
+import { systemDesignDataTopics } from "./topics/system-design-data";
+import { systemDesignScalingTopics } from "./topics/system-design-scaling";
+
+// ---- AI Engineering course ----
+import { aiFundamentalsTopics } from "./topics/ai-fundamentals";
+import { aiPromptEngineeringTopics } from "./topics/ai-prompt-engineering";
+import { aiLlmIntegrationTopics } from "./topics/ai-llm-integration";
+import { aiRagTopics } from "./topics/ai-rag";
+import { aiLangchainTopics } from "./topics/ai-langchain";
+// NOTE: the "AI Agents" module (ai-agents.ts) is still pending — see TODO.txt.
+
+// ============================================================
+// COURSES
+// Top level of the content hierarchy: Course → Section → Topic.
+// The "aws" course lists every existing section id (no content edits).
+// New courses start empty and are populated as their content lands.
+// ============================================================
+export const courses: CourseInfo[] = [
+  {
+    id: "aws",
+    title: "AWS / Cloud",
+    icon: "Cloud",
+    description: "AWS Solutions Architect Associate (SAA-C03) fundamentals.",
+    sectionIds: [
+      "intro",
+      "iam",
+      "ec2-basics",
+      "ec2-assoc",
+      "ec2-storage",
+      "ha-scaling",
+      "databases",
+      "route53",
+      "solutions-architectures",
+      "amazon-s3",
+      "amazon-s3-advanced",
+      "cloudfront-ga",
+      "storage-extras",
+      "messaging",
+    ],
+  },
+  {
+    id: "frontend",
+    title: "Frontend",
+    icon: "Layout",
+    description: "JavaScript core, closures, async, and the event loop.",
+    sectionIds: ["js-core", "js-async"],
+  },
+  {
+    id: "backend",
+    title: "Backend",
+    icon: "Server",
+    description: "Python foundations, advanced patterns, and containers.",
+    sectionIds: ["py-foundations", "py-advanced", "backend-containers"],
+  },
+  {
+    id: "ai",
+    title: "AI Engineering",
+    icon: "Sparkles",
+    description: "LLMs, prompting, RAG, LangChain, and AI agents.",
+    // "ai-agents" section is pending authoring (see TODO.txt) — add it here once done.
+    sectionIds: [
+      "ai-fundamentals",
+      "prompt-engineering",
+      "llm-integration",
+      "rag",
+      "langchain",
+    ],
+  },
+  {
+    id: "networking",
+    title: "Networking",
+    icon: "Network",
+    description: "Web protocols, DNS, TLS, and content delivery.",
+    sectionIds: ["net-protocols", "net-dns-tls", "net-delivery"],
+  },
+  {
+    id: "system-design",
+    title: "System Design",
+    icon: "Boxes",
+    description: "Scalability, storage, caching, and distributed patterns.",
+    sectionIds: ["sd-fundamentals", "sd-data", "sd-scaling"],
+  },
+];
 
 // ============================================================
 // SECTIONS
@@ -208,6 +309,143 @@ export const sections: SectionInfo[] = [
       "sns-sqs-fanout",
       "amazon-kinesis",
     ],
+  },
+
+  // ---- Frontend course ----
+  {
+    id: "js-core",
+    title: "JavaScript Core",
+    topicIds: [
+      "fe-closures",
+      "fe-scope",
+      "fe-this",
+      "fe-currying",
+      "fe-es6-features",
+      "fe-array-methods",
+    ],
+  },
+  {
+    id: "js-async",
+    title: "Async & Event Loop",
+    topicIds: ["fe-event-loop", "fe-promises-async"],
+  },
+
+  // ---- Backend course ----
+  {
+    id: "py-foundations",
+    title: "Python Foundations",
+    topicIds: [
+      "be-env-setup",
+      "be-python-syntax",
+      "be-collections",
+      "be-control-flow",
+      "be-functions",
+      "be-comprehensions",
+    ],
+  },
+  {
+    id: "py-advanced",
+    title: "Advanced Python",
+    topicIds: [
+      "be-oop",
+      "be-advanced-python",
+      "be-error-handling",
+      "be-concurrency",
+      "be-async-programming",
+      "be-pydantic",
+    ],
+  },
+  {
+    id: "backend-containers",
+    title: "Containers",
+    topicIds: ["be-docker", "be-docker-compose", "be-container-images"],
+  },
+
+  // ---- Networking course ----
+  {
+    id: "net-protocols",
+    title: "Web Protocols",
+    topicIds: ["net-http", "net-rest-api", "net-tcp-udp"],
+  },
+  {
+    id: "net-dns-tls",
+    title: "DNS & TLS",
+    topicIds: ["net-dns", "net-tls"],
+  },
+  {
+    id: "net-delivery",
+    title: "Delivery & Scale",
+    topicIds: ["net-load-balancing", "net-cdn-caching", "net-websockets"],
+  },
+
+  // ---- System Design course ----
+  {
+    id: "sd-fundamentals",
+    title: "Fundamentals",
+    topicIds: ["sd-scalability", "sd-load-balancing", "sd-caching"],
+  },
+  {
+    id: "sd-data",
+    title: "Data & Storage",
+    topicIds: ["sd-sql-vs-nosql", "sd-replication-sharding", "sd-cap-theorem"],
+  },
+  {
+    id: "sd-scaling",
+    title: "Scaling Patterns",
+    topicIds: ["sd-message-queues", "sd-rate-limiting", "sd-consistent-hashing"],
+  },
+
+  // ---- AI Engineering course (5/6 sections — "AI Agents" pending, see TODO.txt) ----
+  {
+    id: "ai-fundamentals",
+    title: "AI Fundamentals",
+    topicIds: [
+      "ai-fundamentals",
+      "ai-transformers-attention",
+      "ai-tokens-embeddings",
+      "ai-model-evaluation",
+      "ai-context-memory",
+      "ai-inference-sampling",
+    ],
+  },
+  {
+    id: "prompt-engineering",
+    title: "Prompt Engineering",
+    topicIds: [
+      "ai-prompt-engineering",
+      "ai-few-shot",
+      "ai-chain-of-thought",
+      "ai-structured-prompting",
+      "ai-prompt-optimization",
+    ],
+  },
+  {
+    id: "llm-integration",
+    title: "LLM Integration",
+    topicIds: [
+      "ai-llm-api",
+      "ai-streaming-async",
+      "ai-function-calling",
+      "ai-caching-tokens",
+    ],
+  },
+  {
+    id: "rag",
+    title: "RAG — Retrieval-Augmented Generation",
+    topicIds: [
+      "ai-rag-fundamentals",
+      "ai-chunking",
+      "ai-vector-databases",
+      "ai-retrieval-evaluation",
+      "ai-context-injection",
+      "ai-hybrid-search",
+      "ai-rag-failures",
+    ],
+  },
+  {
+    id: "langchain",
+    title: "LangChain",
+    topicIds: ["ai-langchain-basics", "ai-langchain-chains", "ai-langchain-memory"],
   },
 ];
 
@@ -4909,4 +5147,30 @@ aws efs put-lifecycle-configuration \\
   ...cloudfrontGaTopics,
   ...storageExtrasTopics,
   ...messagingTopics,
+
+  // ---- Frontend course ----
+  ...frontendCoreTopics,
+  ...frontendAsyncTopics,
+
+  // ---- Backend course ----
+  ...backendPyFoundationsTopics,
+  ...backendPyAdvancedTopics,
+  ...backendContainersTopics,
+
+  // ---- Networking course ----
+  ...networkingProtocolsTopics,
+  ...networkingDnsTlsTopics,
+  ...networkingDeliveryTopics,
+
+  // ---- System Design course ----
+  ...systemDesignFundamentalsTopics,
+  ...systemDesignDataTopics,
+  ...systemDesignScalingTopics,
+
+  // ---- AI Engineering course (5/6 sections — "AI Agents" pending) ----
+  ...aiFundamentalsTopics,
+  ...aiPromptEngineeringTopics,
+  ...aiLlmIntegrationTopics,
+  ...aiRagTopics,
+  ...aiLangchainTopics,
 ];
