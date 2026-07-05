@@ -1820,7 +1820,7 @@ function RightSidebar({
 }) {
   if (collapsed) {
     return (
-      <aside className="w-12 flex-shrink-0 border-l border-border bg-bg-panel/60 flex flex-col">
+      <aside className="hidden lg:flex w-12 flex-shrink-0 border-l border-border bg-bg-panel/60 flex-col">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -1840,7 +1840,7 @@ function RightSidebar({
     );
   }
   return (
-    <aside className="w-80 flex-shrink-0 border-l border-border bg-bg-panel/60 overflow-y-auto">
+    <aside className="hidden lg:block w-80 flex-shrink-0 border-l border-border bg-bg-panel/60 overflow-y-auto">
       <div className="p-4 space-y-5">
         <div className="flex items-center justify-between">
           <div>
@@ -2204,6 +2204,14 @@ function QuizPanel({
   const score = topicScore(topic.id, quiz);
   const answered = score.answered;
 
+  // Results view shown after "Finish" on the last question. Kept local since
+  // it's ephemeral display state; reset whenever we leave quiz mode (e.g. on a
+  // topic switch, where the parent flips quizMode back to false).
+  const [showSummary, setShowSummary] = useState(false);
+  useEffect(() => {
+    if (!quizMode) setShowSummary(false);
+  }, [quizMode]);
+
   if (!quizMode) {
     return (
       <div className="rounded-md border border-border bg-bg-card/50 p-5 flex flex-col items-center text-center">
@@ -2225,6 +2233,7 @@ function QuizPanel({
               setCurrentQ(0);
               setShowAnswer(false);
               setSelectedAnswer(null);
+              setShowSummary(false);
             }}
             className="px-5 py-2 rounded-md bg-accent text-bg-base font-semibold hover:bg-accent-hover transition-colors flex items-center gap-2"
           >
@@ -2270,6 +2279,166 @@ function QuizPanel({
     if (!e) return "pending";
     return e.correct ? "correct" : "wrong";
   });
+
+  // ---- Results summary (after "Finish" on the last question) ----
+  if (showSummary) {
+    const pct = answered === 0 ? 0 : Math.round((score.correct / answered) * 100);
+    return (
+      <div className="space-y-4">
+        {/* Header — score + accuracy */}
+        <div className="rounded-md border border-accent/30 bg-gradient-to-r from-bg-panel to-bg-card p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Trophy size={36} className="text-accent" />
+            <div>
+              <div className="text-lg font-bold text-text-primary">Quiz Complete!</div>
+              <div className="text-[13px] text-text-muted">
+                {topic.shortLabel} · {answered} of {totalQ} answered
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="text-center">
+              <div className="text-[11px] uppercase tracking-wide text-text-muted">Score</div>
+              <div className="text-2xl font-bold text-accent">
+                {score.correct} <span className="text-text-muted text-base">/ {totalQ}</span>
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-[11px] uppercase tracking-wide text-text-muted">Accuracy</div>
+              <div className="text-2xl font-bold text-text-primary">{pct}%</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Per-question review: your answer + correct answer + explanation */}
+        <div className="space-y-3">
+          {topic.questions.map((question, i) => {
+            const entry = quiz[topic.id]?.[i];
+            const userLetter = entry?.selected ?? null;
+            const correct = question.answer;
+            const isCorrect = entry?.correct ?? false;
+            const unanswered = userLetter == null;
+            return (
+              <div
+                key={i}
+                className={`rounded-md border p-4 ${
+                  unanswered
+                    ? "border-border bg-bg-card/40"
+                    : isCorrect
+                    ? "border-success/40 bg-success/[0.05]"
+                    : "border-danger/40 bg-danger/[0.05]"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="text-[14px] font-medium text-text-primary leading-snug">
+                    <span className="text-text-muted font-mono text-[12px] mr-2">Q{i + 1}</span>
+                    {question.q}
+                  </div>
+                  <span
+                    className={`shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded ${
+                      unanswered
+                        ? "bg-bg-base text-text-muted border border-border"
+                        : isCorrect
+                        ? "bg-success/15 text-success"
+                        : "bg-danger/15 text-danger"
+                    }`}
+                  >
+                    {unanswered ? (
+                      "Skipped"
+                    ) : isCorrect ? (
+                      <>
+                        <CheckCircle2 size={12} /> Correct
+                      </>
+                    ) : (
+                      <>
+                        <X size={12} /> Wrong
+                      </>
+                    )}
+                  </span>
+                </div>
+
+                <div className="grid gap-1.5 mb-3">
+                  {optionLetters.map((letter, idx) => {
+                    const text = question.options[idx];
+                    const isAnswer = letter === correct;
+                    const isUser = letter === userLetter;
+                    let cls =
+                      "flex items-start gap-2 p-2 rounded border text-[13px] ";
+                    if (isAnswer)
+                      cls += "border-success bg-success/15 text-text-primary";
+                    else if (isUser && !isAnswer)
+                      cls += "border-danger bg-danger/10 text-text-primary";
+                    else cls += "border-border bg-bg-base/50 text-text-muted";
+                    return (
+                      <div key={letter} className={cls}>
+                        <span
+                          className={`shrink-0 w-5 h-5 rounded flex items-center justify-center font-mono text-[11px] font-semibold ${
+                            isAnswer
+                              ? "bg-success text-bg-base"
+                              : isUser
+                              ? "bg-danger text-white"
+                              : "bg-bg-panel text-text-secondary border border-border"
+                          }`}
+                        >
+                          {letter}
+                        </span>
+                        <span className="flex-1">
+                          {text.replace(/^[A-D]\.\s*/, "")}
+                        </span>
+                        {isAnswer && (
+                          <span className="text-[10px] text-success font-semibold shrink-0 mt-0.5">
+                            Correct answer
+                          </span>
+                        )}
+                        {isUser && !isAnswer && (
+                          <span className="text-[10px] text-danger font-semibold shrink-0 mt-0.5">
+                            Your answer
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="rounded border border-border bg-bg-base p-3">
+                  <div className="text-[11px] font-semibold text-text-secondary mb-1 flex items-center gap-1.5">
+                    <Lightbulb size={12} className="text-accent" /> Explanation
+                  </div>
+                  <p className="text-[12.5px] leading-relaxed text-text-secondary whitespace-pre-line">
+                    {question.explanation}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-center gap-3 pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              onReset();
+              setShowSummary(false);
+            }}
+            className="px-5 py-2 rounded-md bg-accent text-bg-base font-semibold hover:bg-accent-hover transition-colors flex items-center gap-2"
+          >
+            <Sparkles size={16} /> Retake Quiz
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowSummary(false);
+              setQuizMode(false);
+            }}
+            className="px-4 py-2 rounded-md border border-border bg-bg-base text-text-secondary hover:bg-bg-hover text-[13px]"
+          >
+            Back to Topic
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px] gap-4">
@@ -2387,7 +2556,7 @@ function QuizPanel({
                 setShowAnswer(!!next);
                 setSelectedAnswer(next?.selected ?? null);
               } else {
-                setQuizMode(false);
+                setShowSummary(true);
               }
             }}
             className="px-3 py-1.5 rounded-md bg-accent text-bg-base text-[13px] font-semibold hover:bg-accent-hover"

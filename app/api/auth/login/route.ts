@@ -11,7 +11,8 @@ type Body = { username?: unknown; password?: unknown };
 
 const USERS: Record<string, { password: string; displayName: string }> = {
   "kumar-user": { password: "securehigh", displayName: "kumar-user" },
-  "kumar2-user": { password: "securehigh", displayName: "kumar2-user" },
+  "varsha": { password: "securehigh", displayName: "varsha" },
+  "himanshu": { password: "securehigh", displayName: "himanshu" },
 };
 
 export async function POST(req: NextRequest) {
