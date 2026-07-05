@@ -10,7 +10,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import {
-  Search,
   ChevronDown,
   ChevronRight,
   CheckCircle2,
@@ -24,8 +23,6 @@ import {
   AlertCircle,
   HelpCircle,
   Sparkles,
-  Sun,
-  Moon,
   LogOut,
   Copy,
   Check,
@@ -39,12 +36,13 @@ import {
   PanelRightOpen,
   TrendingUp,
   Star,
-  ChevronsRight,
   GripVertical,
   Cloud,
   Layout,
   Server,
   Boxes,
+  Brain,
+  Menu,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -724,8 +722,11 @@ function Panel({
     <section
       className={`relative rounded-lg bg-bg-card/40 border border-border overflow-hidden ${tab.border} panel-enter`}
     >
+      {/* Clicking anywhere on the header toggles collapse/expand. */}
       <header
-        className={`flex items-center justify-between px-4 py-2.5 ${tab.ring} border-b border-border`}
+        onClick={onToggleCollapse}
+        className={`flex items-center justify-between px-4 py-2.5 ${tab.ring} border-b border-border cursor-pointer select-none`}
+        title={collapsed ? "Click to expand" : "Click to collapse"}
       >
         <div className="flex items-center gap-2">
           <Icon size={14} className={tab.accent} />
@@ -734,7 +735,10 @@ function Panel({
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={onToggleCollapse}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapse();
+            }}
             className="tip p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary"
             data-tip={collapsed ? "Expand" : "Collapse"}
             aria-label={collapsed ? "Expand panel" : "Collapse panel"}
@@ -743,7 +747,10 @@ function Panel({
           </button>
           <button
             type="button"
-            onClick={onClose}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
             className="tip p-1 rounded hover:bg-bg-hover text-text-muted hover:text-danger"
             data-tip="Close tab"
             aria-label="Close panel"
@@ -802,6 +809,10 @@ export default function Page() {
   const [hydrated, setHydrated] = useState(false);
   const [state, setState] = useState<AppState>(defaultState);
   const [search, setSearch] = useState("");
+
+  // Mobile-only: the left sidebar is hidden on small screens and opened as a
+  // full-screen drawer from the navbar menu button.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // quiz UI state (per active topic, ephemeral)
   const [quizMode, setQuizMode] = useState(false);
@@ -1148,30 +1159,35 @@ export default function Page() {
       {/* ============ TOP BAR ============ */}
       <header className="flex-shrink-0 border-b border-border bg-bg-panel/90 backdrop-blur sticky top-0 z-40">
         <div className="flex items-center gap-3 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-md bg-bg-base border border-border flex items-center justify-center">
-              <span className="text-accent font-bold text-lg">aws</span>
+          {/* Mobile menu button — opens the course drawer */}
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            className="lg:hidden p-2 -ml-1 rounded-md hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+            aria-label="Open course menu"
+          >
+            <Menu size={20} />
+          </button>
+
+          {/* Logo + app name */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="w-9 h-9 rounded-md bg-gradient-to-br from-accent to-orange-600 flex items-center justify-center text-white shadow-sm shadow-accent/30">
+              <Brain size={20} />
             </div>
-            <div className="hidden md:block">
-              <div className="text-sm font-semibold text-text-primary">SAA Learning App</div>
-              <div className="text-[11px] text-text-muted">Solutions Architect Associate</div>
+            <div className="hidden sm:block leading-tight">
+              <div className="text-sm font-semibold text-text-primary">Galaxy Brain</div>
+              <div className="text-[11px] text-text-muted">Cram today, flex tomorrow.</div>
             </div>
           </div>
 
-          {/* Search */}
-          <div className="flex-1 max-w-2xl mx-auto relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={16} />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search IAM, EC2, S3..."
-              className="w-full pl-9 pr-12 py-2 rounded-md bg-bg-base border border-border focus:border-accent focus:outline-none text-sm text-text-primary placeholder:text-text-muted"
-              aria-label="Search topics"
-            />
-            <kbd className="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-text-muted border border-border rounded px-1.5 py-0.5">
-              ⌘K
-            </kbd>
+          {/* Active topic heading — fills the space the search used to occupy */}
+          <div className="flex-1 min-w-0 px-2 lg:px-4 text-center">
+            <div className="hidden sm:block text-[10.5px] uppercase tracking-wide text-text-muted truncate">
+              {selectedTopic.section}
+            </div>
+            <h1 className="text-[13px] md:text-[15px] font-semibold text-text-primary truncate">
+              {selectedTopic.title}
+            </h1>
           </div>
 
           {/* Overall progress — Visited + Completed stacked bars */}
@@ -1216,11 +1232,8 @@ export default function Page() {
           </div>
 
           <div className="flex items-center gap-1">
-            <button className="p-2 rounded-md hover:bg-bg-hover text-text-muted" aria-label="Light theme" type="button"><Sun size={16} /></button>
-            <button className="p-2 rounded-md bg-bg-base text-accent border border-border" aria-label="Dark theme" type="button"><Moon size={16} /></button>
-
             {user && (
-              <div className="ml-2 flex items-center gap-2 pl-3 border-l border-border">
+              <div className="flex items-center gap-2">
                 <div className="hidden sm:block text-right leading-tight">
                   <div className="text-[12px] text-text-primary font-medium">
                     {user.displayName}
@@ -1287,15 +1300,37 @@ export default function Page() {
           onTopicCheckboxToggle={onTopicCheckboxToggle}
         />
 
+        {/* Mobile: full-screen course drawer, opened from the navbar menu button */}
+        {mobileNavOpen && (
+          <LeftSidebar
+            mobile
+            onCloseMobile={() => setMobileNavOpen(false)}
+            collapsed={false}
+            setCollapsed={() => {}}
+            filteredSections={filteredSections}
+            selectedCourseId={state.selectedCourseId}
+            onSelectCourse={selectCourse}
+            expanded={state.expanded}
+            setExpanded={(eid) =>
+              setState((s) => ({
+                ...s,
+                expanded: { ...s.expanded, [eid]: !s.expanded[eid] },
+              }))
+            }
+            selectedTopicId={state.selectedTopicId}
+            setSelectedTopicId={(id) =>
+              setState((s) => ({ ...s, selectedTopicId: id }))
+            }
+            visited={state.visited}
+            quiz={state.quiz}
+            streak={streak}
+            topicDone={state.topicDone}
+            onTopicCheckboxToggle={onTopicCheckboxToggle}
+          />
+        )}
+
         {/* ====== CENTER ====== */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Breadcrumb */}
-          <div className="px-4 lg:px-6 py-2 text-[11.5px] text-text-muted border-b border-border flex items-center gap-1.5 bg-bg-base/40">
-            <span>{selectedTopic.section}</span>
-            <ChevronsRight size={12} />
-            <span className="text-text-primary font-medium">{selectedTopic.shortLabel}</span>
-          </div>
-
           {/* Sticky tab bar */}
           <div className="glass sticky top-0 z-20">
             <div className="flex items-center gap-1 px-3 py-1.5 overflow-x-auto">
@@ -1357,34 +1392,35 @@ export default function Page() {
                   </div>
                 );
               })}
+            </div>
 
-              <div className="ml-auto flex items-center gap-1 pr-1">
-                <span className="hidden lg:flex items-center gap-1 text-[11px] text-text-muted mr-2">
-                  <Clock size={11} />
-                  {formatElapsed(accumulatedMs)}
-                </span>
-                <button
-                  type="button"
-                  onClick={openAll}
-                  className="text-[11px] px-2 py-1 rounded hover:bg-bg-hover text-text-secondary"
-                >
-                  Open all
-                </button>
-                <button
-                  type="button"
-                  onClick={expandAll}
-                  className="text-[11px] px-2 py-1 rounded hover:bg-bg-hover text-text-secondary"
-                >
-                  Expand all
-                </button>
-                <button
-                  type="button"
-                  onClick={collapseAll}
-                  className="text-[11px] px-2 py-1 rounded hover:bg-bg-hover text-text-secondary"
-                >
-                  Collapse all
-                </button>
-              </div>
+            {/* Action bar — always visible; stays put while the tab row scrolls */}
+            <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border">
+              <button
+                type="button"
+                onClick={openAll}
+                className="text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+              >
+                Open all
+              </button>
+              <button
+                type="button"
+                onClick={expandAll}
+                className="text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+              >
+                Expand all
+              </button>
+              <button
+                type="button"
+                onClick={collapseAll}
+                className="text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+              >
+                Collapse all
+              </button>
+              <span className="ml-auto hidden sm:flex items-center gap-1 text-[11px] text-text-muted">
+                <Clock size={11} />
+                {formatElapsed(accumulatedMs)}
+              </span>
             </div>
           </div>
 
@@ -1633,6 +1669,8 @@ function LeftSidebar({
   streak,
   topicDone,
   onTopicCheckboxToggle,
+  mobile = false,
+  onCloseMobile,
 }: {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
@@ -1648,10 +1686,13 @@ function LeftSidebar({
   streak: number;
   topicDone: Record<string, boolean>;
   onTopicCheckboxToggle: (topicId: string) => void;
+  mobile?: boolean;
+  onCloseMobile?: () => void;
 }) {
-  if (collapsed) {
+  // Collapsed rail — desktop only (hidden on mobile; the drawer covers mobile).
+  if (!mobile && collapsed) {
     return (
-      <aside className="w-12 flex-shrink-0 border-r border-border bg-bg-panel/60 flex flex-col">
+      <aside className="hidden lg:flex w-12 flex-shrink-0 border-r border-border bg-bg-panel/60 flex-col">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -1683,21 +1724,9 @@ function LeftSidebar({
       </aside>
     );
   }
-  return (
-    <aside className="w-72 flex-shrink-0 border-r border-border bg-bg-panel/60 overflow-y-auto flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3">
-        <div className="text-[11px] uppercase tracking-wide text-text-muted">Course Content</div>
-        <button
-          type="button"
-          onClick={() => setCollapsed(true)}
-          className="tip p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary"
-          data-tip="Collapse sidebar"
-          aria-label="Collapse sidebar"
-        >
-          <PanelLeftClose size={14} />
-        </button>
-      </div>
-
+  // Shared content used by both the desktop panel and the mobile drawer.
+  const body = (
+    <>
       <CourseSwitcher selectedCourseId={selectedCourseId} onSelect={onSelectCourse} />
 
       <nav className="flex-1">
@@ -1743,7 +1772,10 @@ function LeftSidebar({
                       <li key={tid}>
                         <button
                           type="button"
-                          onClick={() => setSelectedTopicId(tid)}
+                          onClick={() => {
+                            setSelectedTopicId(tid);
+                            onCloseMobile?.();
+                          }}
                           className={`w-full text-left flex items-center gap-1.5 px-3 py-1.5 my-0.5 rounded text-[13px] transition-colors ${
                             isActive
                               ? "bg-accent/15 text-accent font-medium"
@@ -1786,6 +1818,48 @@ function LeftSidebar({
           {streak > 0 ? "Keep it up — come back tomorrow." : "Visit a topic today to start a streak."}
         </div>
       </div>
+    </>
+  );
+
+  // Mobile: full-screen drawer with a close button in the top-right corner.
+  if (mobile) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-bg-base lg:hidden">
+        <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Brain size={18} className="text-accent" />
+            <span className="text-sm font-semibold text-text-primary">Course Content</span>
+          </div>
+          <button
+            type="button"
+            onClick={onCloseMobile}
+            className="p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-text-primary"
+            aria-label="Close menu"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto flex flex-col">{body}</div>
+      </div>
+    );
+  }
+
+  // Desktop expanded panel (hidden on mobile).
+  return (
+    <aside className="hidden lg:flex w-72 flex-shrink-0 border-r border-border bg-bg-panel/60 overflow-y-auto flex-col">
+      <div className="flex items-center justify-between px-4 py-3">
+        <div className="text-[11px] uppercase tracking-wide text-text-muted">Course Content</div>
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          className="tip p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary"
+          data-tip="Collapse sidebar"
+          aria-label="Collapse sidebar"
+        >
+          <PanelLeftClose size={14} />
+        </button>
+      </div>
+      {body}
     </aside>
   );
 }
