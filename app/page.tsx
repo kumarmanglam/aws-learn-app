@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -43,7 +42,7 @@ import {
   PanelRightOpen,
   TrendingUp,
   Star,
-  GripVertical,
+  Layers,
   Cloud,
   Layout,
   Server,
@@ -55,6 +54,9 @@ import {
   Undo2,
   XSquare,
   Play,
+  Terminal,
+  LayoutDashboard,
+  KanbanSquare,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -87,6 +89,7 @@ import {
   domainStrengths,
   recommendedRevisions,
 } from "@/lib/progress-metrics";
+import { CenterLoader } from "@/components/center-loader";
 
 // Resolve a CourseInfo.icon name to a lucide-react component (fallback: BookOpen).
 const COURSE_ICONS: Record<string, LucideIcon> = {
@@ -147,6 +150,13 @@ function firstTopicOfCourse(courseId: string): string | undefined {
     if (sec?.topicIds.length) return sec.topicIds[0];
   }
   return undefined;
+}
+
+/** The course id that owns a topic (via its section), if any. */
+function courseOfTopic(topicId: string): string | undefined {
+  const sec = sections.find((s) => s.topicIds.includes(topicId));
+  if (!sec) return undefined;
+  return courses.find((c) => c.sectionIds.includes(sec.id))?.id;
 }
 
 function defaultState(): AppState {
@@ -753,82 +763,13 @@ function ManualCheckbox({
 }
 
 // ============================================================
-// FLIP reorder animation — animates [data-flip-key] children of `ref`
-// from their previous layout position to the new one whenever `deps` change.
-// Dependency-free (Web Animations API); respects prefers-reduced-motion.
-// ============================================================
-function useFlip(
-  ref: React.RefObject<HTMLElement>,
-  deps: React.DependencyList
-) {
-  const prev = useRef<Map<string, DOMRect>>(new Map());
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    const nodes = Array.from(
-      el.querySelectorAll<HTMLElement>("[data-flip-key]")
-    );
-    if (!reduce) {
-      for (const node of nodes) {
-        const key = node.getAttribute("data-flip-key");
-        if (!key) continue;
-        const before = prev.current.get(key);
-        const after = node.getBoundingClientRect();
-        if (before) {
-          const dx = before.left - after.left;
-          const dy = before.top - after.top;
-          if (dx || dy) {
-            node.animate(
-              [
-                { transform: `translate(${dx}px, ${dy}px)` },
-                { transform: "translate(0, 0)" },
-              ],
-              { duration: 260, easing: "cubic-bezier(0.2, 0.65, 0.2, 1)" }
-            );
-          }
-        }
-      }
-    }
-    const next = new Map<string, DOMRect>();
-    for (const node of nodes) {
-      const key = node.getAttribute("data-flip-key");
-      if (key) next.set(key, node.getBoundingClientRect());
-    }
-    prev.current = next;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-}
-
-// ============================================================
-// Center modal loader — full-screen overlay shown while page data loads
-// ============================================================
-function CenterLoader({ label = "Loading your progress…" }: { label?: string }) {
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-bg-base/70 backdrop-blur-sm animate-fade-in"
-      role="status"
-      aria-live="polite"
-      aria-busy="true"
-    >
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-bg-panel/95 px-8 py-6 shadow-2xl">
-        <div className="relative">
-          <Loader2 size={34} className="animate-spin text-accent" />
-        </div>
-        <div className="text-[13px] text-text-secondary">{label}</div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
 // Top navigation bar (logo, active topic, progress, user)
 // Rendered inside the center scroll column so it scrolls away on desktop.
 // ============================================================
 function TopNav({
   onOpenMobileNav,
+  onOpenCourseDrawer,
+  activeCourse,
   selectedTopic,
   visitedCount,
   completedCount,
@@ -837,6 +778,8 @@ function TopNav({
   user,
 }: {
   onOpenMobileNav: () => void;
+  onOpenCourseDrawer: () => void;
+  activeCourse: (typeof courses)[number] | undefined;
   selectedTopic: Topic;
   visitedCount: number;
   completedCount: number;
@@ -844,13 +787,16 @@ function TopNav({
   gScore: { correct: number; total: number };
   user: SessionUser | null;
 }) {
+  const CourseIcon = activeCourse
+    ? COURSE_ICONS[activeCourse.icon] ?? BookOpen
+    : BookOpen;
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
+    <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3">
       {/* Mobile menu button — opens the course drawer */}
       <button
         type="button"
         onClick={onOpenMobileNav}
-        className="lg:hidden p-2 -ml-1 rounded-md hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+        className="lg:hidden p-2 -ml-1 rounded-md hover:bg-bg-hover text-text-secondary hover:text-text-primary shrink-0"
         aria-label="Open course menu"
       >
         <Menu size={20} />
@@ -867,9 +813,23 @@ function TopNav({
         </div>
       </div>
 
-      {/* Active topic heading */}
-      <div className="flex-1 min-w-0 px-2 lg:px-4 text-center">
-        <div className="hidden sm:block text-[10.5px] uppercase tracking-wide text-text-muted truncate">
+      {/* Mobile course switcher — opens the bottom drawer (desktop uses the sidebar) */}
+      <button
+        type="button"
+        onClick={onOpenCourseDrawer}
+        aria-label="Switch course"
+        className="lg:hidden flex-1 min-w-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-bg-base text-text-secondary hover:text-text-primary"
+      >
+        <CourseIcon size={15} className="shrink-0 text-accent" />
+        <span className="text-[12.5px] font-medium truncate">
+          {activeCourse?.title ?? "Course"}
+        </span>
+        <ChevronDown size={13} className="shrink-0 ml-auto" />
+      </button>
+
+      {/* Active topic heading (desktop only) */}
+      <div className="hidden lg:block flex-1 min-w-0 px-2 lg:px-4 text-center">
+        <div className="text-[10.5px] uppercase tracking-wide text-text-muted truncate">
           {selectedTopic.section}
         </div>
         <h1 className="text-[13px] md:text-[15px] font-semibold text-text-primary truncate">
@@ -918,7 +878,31 @@ function TopNav({
         </div>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+        <a
+          href="/dashboard"
+          className="tip tip-bottom p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-accent"
+          data-tip="Dashboard"
+          aria-label="Open dashboard"
+        >
+          <LayoutDashboard size={16} />
+        </a>
+        <a
+          href="/playground"
+          className="tip tip-bottom p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-accent"
+          data-tip="Playground"
+          aria-label="Open code playground"
+        >
+          <Terminal size={16} />
+        </a>
+        <a
+          href="/kanban"
+          className="tip tip-bottom p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-accent"
+          data-tip="Kanban board"
+          aria-label="Open Kanban board"
+        >
+          <KanbanSquare size={16} />
+        </a>
         {user && (
           <div className="flex items-center gap-2">
             <div className="hidden sm:block text-right leading-tight">
@@ -961,6 +945,94 @@ function TopNav({
   );
 }
 
+// ============================================================
+// Mobile course switcher — bottom sheet drawer
+// ============================================================
+function CourseBottomDrawer({
+  open,
+  onClose,
+  selectedCourseId,
+  onSelect,
+}: {
+  open: boolean;
+  onClose: () => void;
+  selectedCourseId: string;
+  onSelect: (id: string) => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[55] lg:hidden">
+      <div
+        className="absolute inset-0 bg-black/50 animate-fade-in"
+        onClick={onClose}
+        aria-hidden
+      />
+      <div className="sheet-enter absolute bottom-0 left-0 right-0 max-h-[75vh] flex flex-col rounded-t-2xl border-t border-border bg-bg-panel shadow-2xl">
+        <div className="pt-2 flex justify-center">
+          <span className="w-10 h-1 rounded-full bg-border" aria-hidden />
+        </div>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <BookOpen size={15} className="text-accent" /> Switch course
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary"
+            aria-label="Close course switcher"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-3 space-y-1.5 overflow-y-auto pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {courses.map((c) => {
+            const Icon = COURSE_ICONS[c.icon] ?? BookOpen;
+            const active = c.id === selectedCourseId;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  onSelect(c.id);
+                  onClose();
+                }}
+                className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${
+                  active
+                    ? "bg-accent/15 border-accent/40"
+                    : "border-border bg-bg-base hover:bg-bg-hover"
+                }`}
+              >
+                <div
+                  className={`w-9 h-9 rounded-md flex items-center justify-center shrink-0 ${
+                    active ? "bg-accent/20 text-accent" : "bg-bg-panel text-text-muted"
+                  }`}
+                >
+                  <Icon size={18} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={`text-[13.5px] font-medium truncate ${
+                      active ? "text-accent" : "text-text-primary"
+                    }`}
+                  >
+                    {c.title}
+                  </div>
+                  {c.description && (
+                    <div className="text-[11.5px] text-text-muted truncate">
+                      {c.description}
+                    </div>
+                  )}
+                </div>
+                {active && <Check size={16} className="text-accent shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Page() {
   const [hydrated, setHydrated] = useState(false);
   const [state, setState] = useState<AppState>(defaultState);
@@ -969,6 +1041,8 @@ export default function Page() {
   // Mobile-only: the left sidebar is hidden on small screens and opened as a
   // full-screen drawer from the navbar menu button.
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Mobile-only: bottom-sheet drawer dedicated to switching the active course.
+  const [mobileCourseOpen, setMobileCourseOpen] = useState(false);
 
   // quiz UI state (per active topic, ephemeral)
   const [quizMode, setQuizMode] = useState(false);
@@ -983,8 +1057,6 @@ export default function Page() {
   const [now, setNow] = useState<number>(Date.now());
   const contentRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
-  const panelsRef = useRef<HTMLDivElement>(null);
-  const tabBarRef = useRef<HTMLDivElement>(null);
 
   // drag state
   const [draggedTab, setDraggedTab] = useState<TabKey | null>(null);
@@ -1039,6 +1111,20 @@ export default function Page() {
         if (cancelled) return;
 
         const merged = mergeFromSections(data.sections);
+
+        // Deep-link: /?topic=<id> (e.g. from the dashboard "Due for review")
+        // selects that topic and switches to its owning course/section.
+        const topicParam = new URLSearchParams(window.location.search).get(
+          "topic"
+        );
+        if (topicParam && topics.some((t) => t.id === topicParam)) {
+          merged.selectedTopicId = topicParam;
+          const cid = courseOfTopic(topicParam);
+          if (cid) merged.selectedCourseId = cid;
+          const sec = sections.find((s) => s.topicIds.includes(topicParam));
+          if (sec) merged.expanded = { ...merged.expanded, [sec.id]: true };
+        }
+
         // streak: record today's login if not already recorded
         const today = todayISO();
         const dates = merged.loginDates.includes(today)
@@ -1283,15 +1369,6 @@ export default function Page() {
       return { ...s, tabOrder, openTabs, collapsedPanels };
     });
 
-  // Animate tab-bar chips and panels when their order/visibility changes.
-  useFlip(tabBarRef, [state.tabOrder, state.openTabs]);
-  useFlip(panelsRef, [
-    state.tabOrder,
-    state.openTabs,
-    state.collapsedPanels,
-    state.selectedTopicId,
-  ]);
-
   // -------- drag-to-reorder tab bar --------
   const handleDragStart = (k: TabKey) => () => setDraggedTab(k);
   const handleDragOver = (k: TabKey) => (e: React.DragEvent) => {
@@ -1356,6 +1433,12 @@ export default function Page() {
   return (
     <div className="h-screen flex flex-col bg-bg-base text-text-primary overflow-hidden">
       {!hydrated && <CenterLoader />}
+      <CourseBottomDrawer
+        open={mobileCourseOpen}
+        onClose={() => setMobileCourseOpen(false)}
+        selectedCourseId={state.selectedCourseId}
+        onSelect={selectCourse}
+      />
 
       {/* ============ MAIN ============ */}
       <div className="flex-1 flex min-h-0">
@@ -1417,7 +1500,7 @@ export default function Page() {
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Center scroll column: navbar (scrolls away on desktop) + sticky
               tab/action bar + panels all share this one scroll context. */}
-          <div ref={contentRef} className="flex-1 overflow-y-auto">
+          <div ref={contentRef} className="flex-1 overflow-y-auto overflow-x-hidden">
             {/* Navbar — scrolls away on desktop, stays pinned on mobile */}
             <header
               ref={navRef}
@@ -1425,6 +1508,8 @@ export default function Page() {
             >
               <TopNav
                 onOpenMobileNav={() => setMobileNavOpen(true)}
+                onOpenCourseDrawer={() => setMobileCourseOpen(true)}
+                activeCourse={activeCourse}
                 selectedTopic={selectedTopic}
                 visitedCount={visitedCount}
                 completedCount={completedCount}
@@ -1435,8 +1520,10 @@ export default function Page() {
             </header>
 
             {/* Sticky tab + action bar — frozen at the top of the scroll column */}
-            <div ref={tabBarRef} className="glass lg:sticky lg:top-0 z-20">
-            <div className="flex items-center gap-1 px-3 py-1.5 overflow-x-auto">
+            <div className="glass lg:sticky lg:top-0 z-20">
+            {/* Tabs: icon-only (label in tooltip) so the row never needs a
+                horizontal scrollbar. */}
+            <div className="flex items-center gap-1 px-3 py-1.5 flex-wrap">
               {state.tabOrder.map((k) => {
                 const meta = TABS[k];
                 const Icon = meta.icon;
@@ -1447,28 +1534,28 @@ export default function Page() {
                 return (
                   <div
                     key={k}
-                    data-flip-key={k}
                     draggable
                     onDragStart={handleDragStart(k)}
                     onDragOver={handleDragOver(k)}
                     onDrop={handleDrop(k)}
                     onDragEnd={handleDragEnd}
-                    className={`flex items-center group rounded-t-md border-t border-l border-r ${open
+                    data-tip={`${meta.label}${open && collapsed ? " (minimized)" : ""}`}
+                    className={`tip tip-bottom flex items-center group rounded-t-md border-t border-l border-r ${open
                       ? "border-border bg-bg-card text-text-primary"
                       : "border-transparent bg-bg-base/40 text-text-muted hover:text-text-primary"} ${isDragging ? "tab-dragging" : ""} ${isDropTarget ? "tab-drop-target" : ""}`}
-                    title={`Click to bring to top · drag to reorder · ${meta.label}`}
                   >
                     <button
                       type="button"
                       onClick={() => focusTab(k)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-[12.5px]"
+                      aria-label={meta.label}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 cursor-grab"
                     >
-                      <GripVertical size={11} className="text-text-muted/50 group-hover:text-text-muted cursor-grab" />
-                      <Icon size={13} className={open ? meta.accent : ""} />
-                      <span>{meta.label}</span>
-                      {open && collapsed && (
-                        <span className="text-[10px] text-text-muted ml-1">(min)</span>
-                      )}
+                      <Icon
+                        size={16}
+                        className={`${open ? meta.accent : ""} ${
+                          open && collapsed ? "opacity-50" : ""
+                        }`}
+                      />
                       <ManualCheckbox
                         checked={state.tabsDone[state.selectedTopicId]?.[k] ?? false}
                         onChange={() => onTabCheckboxToggle(state.selectedTopicId, k)}
@@ -1493,28 +1580,35 @@ export default function Page() {
               })}
             </div>
 
-            {/* Action bar — always visible; stays put while the tab row scrolls */}
-            <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border overflow-x-auto">
+            {/* Action bar — icon + label on wide screens, icon-only (label in
+                the native tooltip) on narrow, so it never needs to scroll. */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 border-t border-border flex-wrap">
               <button
                 type="button"
                 onClick={openAll}
-                className="shrink-0 text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+                title="Open all"
+                className="shrink-0 inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
               >
-                Open all
+                <Layers size={13} />
+                <span className="hidden lg:inline">Open all</span>
               </button>
               <button
                 type="button"
                 onClick={expandAll}
-                className="shrink-0 text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+                title="Expand all"
+                className="shrink-0 inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
               >
-                Expand all
+                <Maximize2 size={13} />
+                <span className="hidden lg:inline">Expand all</span>
               </button>
               <button
                 type="button"
                 onClick={collapseAll}
-                className="shrink-0 text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+                title="Collapse all"
+                className="shrink-0 inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
               >
-                Collapse all
+                <Minimize2 size={13} />
+                <span className="hidden lg:inline">Collapse all</span>
               </button>
               <span className="shrink-0 w-px h-4 bg-border mx-0.5" aria-hidden />
               <button
@@ -1526,17 +1620,20 @@ export default function Page() {
                     ? `Keep only "${TABS[currentTab].label}" open`
                     : "Close others"
                 }
-                className="shrink-0 inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                className="shrink-0 inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <XSquare size={12} /> Close others
+                <XSquare size={13} />
+                <span className="hidden lg:inline">Close others</span>
               </button>
               <button
                 type="button"
                 onClick={closeAll}
                 disabled={state.openTabs.length === 0}
-                className="shrink-0 inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-danger disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Close all"
+                className="shrink-0 inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-danger disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <X size={12} /> Close all
+                <X size={13} />
+                <span className="hidden lg:inline">Close all</span>
               </button>
               <span className="ml-auto shrink-0 hidden sm:flex items-center gap-1 text-[11px] text-text-muted">
                 <Clock size={11} />
@@ -1546,7 +1643,7 @@ export default function Page() {
           </div>
 
             {/* Panels */}
-            <div ref={panelsRef} className="px-4 lg:px-6 py-5 space-y-4">
+            <div className="px-4 lg:px-6 py-5 space-y-4">
             {/* Topic header card */}
             <div className="rounded-lg border border-accent/30 bg-gradient-to-r from-bg-panel to-bg-card overflow-hidden">
               <div className="flex items-center justify-between px-5 py-3.5">
@@ -1585,7 +1682,7 @@ export default function Page() {
                 const meta = TABS[k];
                 const collapsed = isPanelCollapsed(k);
                 return (
-                  <div key={k} id={`panel-${k}`} data-flip-key={k}>
+                  <div key={k} id={`panel-${k}`}>
                     <Panel
                       tab={meta}
                       title={`${
@@ -2294,7 +2391,7 @@ function ArchitecturePanel({ topic }: { topic: Topic }) {
   return (
     <div className="space-y-3">
       <div
-        className="diagram-container rounded-md bg-bg-base/50 p-3 border border-border"
+        className="diagram-container rounded-md bg-bg-base/50 p-3 border border-border overflow-x-auto"
         dangerouslySetInnerHTML={{ __html: topic.diagram }}
       />
       {topic.diagramLegend && topic.diagramLegend.length > 0 && (

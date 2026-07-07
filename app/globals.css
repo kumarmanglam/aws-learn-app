@@ -103,6 +103,13 @@ body {
 }
 .animate-slide-up { animation: slideUp 250ms ease-out; }
 
+/* Bottom sheet (mobile course drawer) slides up from the bottom edge */
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.sheet-enter { animation: sheetUp 260ms cubic-bezier(0.2, 0.65, 0.2, 1); }
+
 /* ---------- Gradient panel border ---------- */
 .gradient-border-blue   { border-image: linear-gradient(180deg, #3b82f6, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
 .gradient-border-purple { border-image: linear-gradient(180deg, #a855f7, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
@@ -164,7 +171,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .panel-enter,
   .animate-fade-in,
-  .animate-slide-up {
+  .animate-slide-up,
+  .sheet-enter {
     animation: none;
   }
 }

@@ -1,0 +1,161 @@
+================================================================
+CHANGE LOG — SAA Learning App
+Session date: 2026-07-08
+Verified: `npx tsc --noEmit` clean · `next build` compiles + lints clean
+(build's "Collecting page data" step needs FIREBASE_* env in .env.local —
+pre-existing environment requirement, not a code issue)
+================================================================
+
+----------------------------------------------------------------
+1. TAB BAR & PANELS (main learning page — app/page.tsx)
+----------------------------------------------------------------
+- Tabs are now ICON-ONLY with the label shown in a tooltip (hover/focus).
+  The tab row wraps instead of scrolling -> no horizontal scrollbar, mobile safe.
+- Each tab chip keeps its per-topic "done" checkbox; collapsed panels show a
+  dimmed icon + "(minimized)" in the tooltip.
+- Clicking a tab brings its panel to the TOP of the panel stack (window order
+  reorders on every click), opens it if closed, expands it if collapsed, and
+  scrolls it under the sticky bar. (Reorder animation was added, then removed
+  on request — reorder is instant now.)
+- Drag-to-reorder tabs still works (HTML5 drag & drop).
+- Every panel header also has its own "Done" checkbox (same tabsDone state as
+  the tab-bar checkbox) plus collapse/expand and close buttons.
+
+----------------------------------------------------------------
+2. TAB ACTION BAR
+----------------------------------------------------------------
+- New buttons: "Close others" (keeps only the front-most tab) and "Close all",
+  alongside Open all / Expand all / Collapse all. Disabled states when N/A.
+- Responsive: icon + label on wide screens (lg+), ICON-ONLY with native tooltip
+  on narrow screens. Wraps instead of scrolling.
+- Tab bar + action bar are FROZEN (sticky) at the top of the content column on
+  desktop while panels scroll beneath.
+
+----------------------------------------------------------------
+3. LAYOUT / SCROLLING (desktop)
+----------------------------------------------------------------
+- Main navbar is part of the center scroll column on desktop -> it SCROLLS AWAY
+  (not frozen). On mobile it stays pinned so the menu button is reachable.
+- Left sidebar (course content) and right dashboard each have their OWN scroll,
+  independent of the center content scroll.
+- Center column is overflow-x-hidden -> the page can never scroll horizontally;
+  wide code blocks & diagrams scroll inside their own containers.
+
+----------------------------------------------------------------
+4. MOBILE
+----------------------------------------------------------------
+- New COURSE SWITCH button in the main navbar (mobile only): shows current
+  course icon + name; tapping opens a BOTTOM-SHEET DRAWER (slides up from the
+  page bottom) listing all courses with icon/title/description/active check.
+  Tap to switch; backdrop tap or X closes. Safe-area aware, reduced-motion aware.
+- Existing hamburger still opens the full-screen sections/topics drawer.
+- All new pages audited for 375px: navbar clusters shrink correctly, playground
+  header wraps, dashboard stat cards go 2-up, heatmap scrolls in its own box.
+
+----------------------------------------------------------------
+5. CENTER MODAL LOADER
+----------------------------------------------------------------
+- Shared <CenterLoader/> component (components/center-loader.tsx): full-screen
+  blurred overlay + spinner. Shown while /api/progress hydrates the main page,
+  while the dashboard/kanban load, and during Pyodide's one-time cold start
+  ("Setting up Python runtime…").
+
+----------------------------------------------------------------
+6. QUIZ / MCQ
+----------------------------------------------------------------
+- OPTION ELIMINATION (FE-only, not persisted): each option has an eliminate
+  toggle — struck-through, dimmed, unselectable; undo button restores it.
+  Eliminating the currently-selected option clears the selection. Cleared on
+  topic switch. Nothing recorded to the backend (as specified).
+- (Answered) MCQ answers ARE saved per user: answers.{topic}.{qIndex} in
+  Firestore userProgress/{username}/sections/quiz. XP/points are derived from
+  saved answers at render time, not stored separately.
+
+----------------------------------------------------------------
+7. IN-BROWSER CODE EXECUTION (lib/code-runner.ts)
+----------------------------------------------------------------
+- JavaScript: runs in a sandboxed Web Worker (no DOM access, captured console,
+  5s timeout kills infinite loops via worker termination).
+- Python: Pyodide (WASM) loaded lazily from CDN ONLY on first Python run —
+  never on app/page load, never prefetched; instance cached for the session.
+- No backend, no Docker, no external execution API, no API keys. (Piston/Judge0
+  approach was explicitly dropped — public Piston went whitelist-only 2026-02-15.)
+- Code tab: "Run" button appears only for JavaScript/Python examples; output
+  (stdout / stderr / return value / errors) renders inline below the code block
+  with a Clear button. Java examples are display-only by design.
+
+----------------------------------------------------------------
+8. PLAYGROUND (app/playground/page.tsx)
+----------------------------------------------------------------
+- Dedicated coding page at /playground using the same in-browser runners.
+- OPENED FROM: Terminal icon button in the main navbar (tooltip "Playground").
+- "Back" button (top-left of playground header) returns to the learning page.
+- Editor with line-number gutter, Tab inserts spaces, Ctrl/Cmd+Enter runs,
+  Clear/Reset-template buttons, per-language starter templates, output panel
+  with exit/error styling. Code + language persist in localStorage.
+
+----------------------------------------------------------------
+9. PER-USER DASHBOARD (app/dashboard/page.tsx)
+----------------------------------------------------------------
+- /dashboard, opened from the LayoutDashboard icon in the navbar. Per-user data
+  only (all reads scoped to the session user).
+- Stat cards: current + longest streak, quiz accuracy, XP + level, visited,
+  completed, total study time.
+- GITHUB-STYLE STREAK HEATMAP: last ~53 weeks of loginDates as a contribution
+  calendar with month labels and per-day tooltip.
+- ADAPTIVE SPACED REPETITION ("Due for review"): topics resurface based on quiz
+  strength (weaker -> shorter interval: 1–21 days) and days since last opened;
+  each row deep-links to /?topic=<id> which opens that topic + its course.
+- Domain strength radar chart (recharts).
+- Powered by lib/progress-metrics.ts (new shared pure-metrics module) and a new
+  per-topic lastReviewed timestamp persisted in the progress section.
+
+----------------------------------------------------------------
+10. KANBAN BOARD (app/kanban/page.tsx)
+----------------------------------------------------------------
+- /kanban, opened from the KanbanSquare icon in the navbar.
+- One board, four columns: Backlog -> To Do -> In Progress -> Done.
+- dnd-kit (@dnd-kit/core + sortable + utilities) — NOT react-beautiful-dnd.
+  Drag between columns and reorder within a column; drag overlay ghost.
+- Cards: title, optional description, PRIORITY (low/medium/high/urgent with
+  colored badges), DUE DATE (overdue highlighted red when not Done),
+  quick-add per column, full add/edit modal, delete, per-column counts.
+- PER-USER persistence: new "kanban" section in /api/progress (Firestore
+  userProgress/{username}/sections/kanban), debounced saves; loads never
+  clobber server data on a failed fetch.
+
+----------------------------------------------------------------
+11. AUTH / MISC
+----------------------------------------------------------------
+- Login username placeholder generalised: "kumar-user" -> "username".
+- /?topic=<id> deep-link support on the main page (used by the dashboard).
+- New routes are session-protected by the existing middleware (redirect to
+  /login when signed out).
+
+----------------------------------------------------------------
+FILES ADDED
+----------------------------------------------------------------
+- components/center-loader.tsx
+- lib/code-runner.ts
+- lib/progress-metrics.ts
+- app/playground/page.tsx
+- app/dashboard/page.tsx
+- app/kanban/page.tsx
+
+FILES MODIFIED
+----------------------------------------------------------------
+- app/page.tsx            (layout, tabs, action bar, checkboxes, quiz
+                           elimination, code-tab Run, nav links, course drawer,
+                           lastReviewed, deep-link)
+- app/login/page.tsx      (placeholder)
+- app/api/progress/route.ts (added "kanban" section)
+- app/globals.css         (bottom-sheet animation)
+- package.json / package-lock.json (@dnd-kit/*)
+
+DEPLOY NOTES
+----------------------------------------------------------------
+- Needs .env.local: FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
+  FIREBASE_PRIVATE_KEY / SESSION_SECRET (see .env.local.example).
+- Pyodide loads from cdn.jsdelivr.net on first Python run.
+- Nothing committed or pushed; stage with:
+    git add app/ components/ lib/ package.json package-lock.json

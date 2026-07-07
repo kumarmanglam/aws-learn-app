@@ -6,6 +6,7 @@
 //   userProgress/{username}/sections/progress
 //   userProgress/{username}/sections/quiz
 //   userProgress/{username}/sections/ui
+//   userProgress/{username}/sections/kanban
 //
 // GET  → assemble all four into a single response
 // PUT  → write ONE section only (per-section debouncing on the client).
@@ -20,7 +21,7 @@ import { FieldValue } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 
-const SECTIONS = ["profile", "progress", "quiz", "ui"] as const;
+const SECTIONS = ["profile", "progress", "quiz", "ui", "kanban"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
 function sectionRef(username: string, section: SectionKey) {
