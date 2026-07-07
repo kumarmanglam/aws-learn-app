@@ -1,0 +1,143 @@
+================================================================
+ PROJECT CONTEXT — aws-learn-app
+================================================================
+
+WHAT THIS IS
+------------
+An interactive, browser-based technical learning platform. It started as an
+AWS Solutions Architect Associate (SAA-C03) study app and is now a
+MULTI-COURSE platform: each course is a structured set of topics with
+explanations, diagrams, code, and quizzes, plus per-user progress tracking.
+
+GOAL
+----
+Help a user learn a subject by working through bite-sized topics: read the
+concept, see a diagram + analogy, study code examples, then test recall with
+a quiz — while the app tracks what they've visited/completed, scores their
+quizzes, and shows strengths per domain.
+
+
+TECH STACK
+----------
+- Next.js 14 (App Router) + React 18 + TypeScript
+- Tailwind CSS (dark theme; CSS variables in app/globals.css)
+- Firebase Firestore (+ firebase-admin) for per-user progress
+- Auth: JWT in an httpOnly cookie (jose), passwords hashed with bcryptjs
+- recharts (dashboard radar chart), lucide-react (icons)
+
+
+CONTENT MODEL — Course -> Section -> Topic  (CODE-FIRST, no CMS/DB)
+------------------------------------------------------------------
+All learning content lives in TypeScript, not a database:
+  lib/topics/shared.ts   -> type definitions (Topic, Question, SectionInfo,
+                            CourseInfo, Domain) + shared SVG helpers
+  lib/topics/*.ts        -> one module per section (e.g. s3.ts, messaging.ts,
+                            frontend-core.ts, ai-rag.ts). Each exports an array
+                            of Topic objects.
+  lib/topics.ts          -> aggregates everything and exports:
+                              courses:  CourseInfo[]  (top level)
+                              sections: SectionInfo[] (topicId lists)
+                              topics:   Topic[]       (all topic content)
+
+Hierarchy:
+  Course  = { id, title, icon, sectionIds[] }        -> groups sections
+  Section = { id, title, topicIds[] }                -> groups topics
+  Topic   = { id, title, section, domain, explanation, analogy, diagram(SVG),
+              codeExample(s), problemStatement, questions[],
+              + optional: tldr, subtopics, keyFacts, quickReference,
+                          diagramLegend }
+  Question= { q, options:[4], answer:"A"|"B"|"C"|"D", explanation }
+
+Every topic id is GLOBALLY UNIQUE (course-prefixed: fe-, be-, ai-, net-, sd-),
+which is why adding courses needs no backend change.
+
+
+UI / TAB STRUCTURE
+------------------
+The whole interface is one large client component: app/page.tsx.
+3-column layout:
+  LEFT  sidebar  -> course switcher (pills) + sections/topics list + search
+                    + per-section progress %
+  CENTER main    -> the selected topic, rendered as a row of TABS
+  RIGHT dashboard-> radar chart (domain strength), XP/level, streak,
+                    topic-completion bars, recommended revisions
+
+The 6 tabs per topic (keys in TabKey):
+  overview     -> TL;DR + subtopics + quick reference
+  explanation  -> long-form prose
+  diagram      -> inline SVG + legend
+  analogy      -> real-world analogy
+  code         -> code example(s), tabbed, with syntax highlight + copy
+  quiz         -> multiple-choice questions, scored, with explanations
+Tabs are reorderable/openable/collapsible; that layout state is persisted.
+
+Everything the sidebar/search/dashboard/radar shows is SCOPED to the
+currently selected course (derived from courses[] -> its sectionIds).
+
+
+BACKEND BEHAVIOUR (per-user progress)
+-------------------------------------
+Auth:
+  app/api/auth/login  (POST) -> verify user, set JWT httpOnly cookie
+  app/api/auth/logout (POST) -> clear cookie
+  app/api/auth/me     (GET)  -> current user
+  middleware.ts             -> protects all routes except /login and /api/auth/*
+Progress API:
+  app/api/progress    (GET)  -> assemble all shards into one state
+                      (PUT)  -> write ONE shard (client debounces writes)
+
+Firestore layout (sharded per user to avoid write races):
+  users/{username}                         -> displayName, passwordHash, createdAt
+  userProgress/{username}/sections/profile -> loginDates[] (for streak)
+  userProgress/{username}/sections/progress-> visited{}, topicTime{}, topicDone{},
+                                              selectedTopicId, tabsDone{}
+  userProgress/{username}/sections/quiz    -> answers{topicId}{qIndex}{selected,correct}
+  userProgress/{username}/sections/ui      -> expanded{}, left/rightCollapsed,
+                                              tabOrder[], openTabs[], collapsedPanels[],
+                                              selectedCourseId
+Progress is keyed by topicId, so it survives content/course additions.
+
+REQUIRED ENV (in .env.local locally, and in the deploy environment):
+  FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
+  (`next build` fails at page-data collection without them.)
+
+
+COURSES & CONTENT COVERED (so far)
+----------------------------------
+1. AWS / Cloud     — original SAA-C03 content (IAM, EC2, EBS/EFS, S3,
+                     HA/scaling, RDS/Aurora/ElastiCache, Route 53, CloudFront,
+                     storage extras, SQS/SNS/Kinesis, etc.)
+2. Frontend        — JavaScript Core (closures, scope, this, currying, ES6+,
+                     array methods) + Async & Event Loop (event loop, promises)
+3. Backend         — Python Foundations (env, syntax, collections, control flow,
+                     functions, comprehensions), Advanced Python (OOP,
+                     decorators/context mgrs, errors, concurrency, asyncio,
+                     Pydantic), Containers (Docker, Compose, image layers)
+4. Networking      — Web Protocols (HTTP/HTTPS, REST/API design, TCP/IP & UDP),
+                     DNS & TLS, Delivery & Scale (load balancing, CDN/caching,
+                     WebSockets)   [freshly authored]
+5. System Design   — Fundamentals (scalability, load balancing, caching),
+                     Data & Storage (SQL vs NoSQL, replication/sharding, CAP),
+                     Scaling Patterns (message queues, rate limiting,
+                     consistent hashing)   [freshly authored]
+6. AI Engineering  — AI Fundamentals, Prompt Engineering, LLM Integration
+                     (Claude Messages API, streaming, tool use, caching), RAG,
+                     LangChain.   NOTE: the "AI Agents" section is still pending
+                     (see TODO.txt).
+
+New non-AWS content was adapted from a reference app (learn-main) and upgraded
+to this app's standard, with Networking and System Design authored fresh.
+
+
+HOW TO EXTEND
+-------------
+Add a topic  -> add a Topic to the relevant lib/topics/<section>.ts and list
+                its id in that section's topicIds (lib/topics.ts).
+Add a section-> create lib/topics/<name>.ts (export a Topic[]), import + spread
+                it into `topics`, add a SectionInfo to `sections`, and add the
+                section id to the owning course's sectionIds in `courses[]`.
+Add a course -> add a CourseInfo to `courses[]` with its sectionIds. The UI
+                (switcher + scoping) picks it up automatically; no page.tsx edits.
+
+Run:  npm run dev   (local)      npm run build   (prod; needs Firebase env)
+Types: npx tsc --noEmit

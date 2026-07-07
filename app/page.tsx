@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   RadarChart,
   PolarGrid,
@@ -43,6 +50,11 @@ import {
   Boxes,
   Brain,
   Menu,
+  Loader2,
+  Ban,
+  Undo2,
+  XSquare,
+  Play,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -54,6 +66,27 @@ import {
   type CodeExample,
   type Subtopic,
 } from "@/lib/topics";
+import {
+  runJavaScript,
+  runPython,
+  isPyodideReady,
+  type RunResult,
+} from "@/lib/code-runner";
+import {
+  type TabKey,
+  type QuizState,
+  todayISO,
+  computeStreak,
+  formatElapsed,
+  sectionProgressPct,
+  topicScore,
+  globalScore,
+  xpFromQuiz,
+  levelFromXp,
+  nextLevelXp,
+  domainStrengths,
+  recommendedRevisions,
+} from "@/lib/progress-metrics";
 
 // Resolve a CourseInfo.icon name to a lucide-react component (fallback: BookOpen).
 const COURSE_ICONS: Record<string, LucideIcon> = {
@@ -67,15 +100,9 @@ const COURSE_ICONS: Record<string, LucideIcon> = {
 
 // ============================================================
 // Sharded server sync (Firebase via /api/progress)
+// TabKey / QuizState + the pure metric helpers now live in
+// lib/progress-metrics (shared with the dashboard).
 // ============================================================
-type TabKey = "overview" | "explanation" | "diagram" | "analogy" | "code" | "quiz";
-
-type QuizState = {
-  [topicId: string]: {
-    [qIndex: number]: { selected: "A" | "B" | "C" | "D"; correct: boolean };
-  };
-};
-
 type AppState = {
   visited: Record<string, boolean>;
   quiz: QuizState;
@@ -90,6 +117,7 @@ type AppState = {
   collapsedPanels: TabKey[];
   topicTime: Record<string, number>; // accumulated ms per topic
   topicDone: Record<string, boolean>;
+  lastReviewed: Record<string, string>; // topicId -> last-opened ISO date (spaced repetition)
   tabsDone: Record<string, Partial<Record<TabKey, boolean>>>;
 };
 
@@ -137,6 +165,7 @@ function defaultState(): AppState {
     collapsedPanels: [],
     topicTime: {},
     topicDone: {},
+    lastReviewed: {},
     tabsDone: {},
   };
 }
@@ -156,6 +185,7 @@ function mergeFromSections(
     topicTime?: Record<string, number>;
     selectedTopicId?: string;
     topicDone?: Record<string, boolean>;
+    lastReviewed?: Record<string, string>;
     tabsDone?: Record<string, Partial<Record<TabKey, boolean>>>;
   };
   const quizDoc = (raw.quiz ?? {}) as { answers?: QuizState };
@@ -170,6 +200,7 @@ function mergeFromSections(
     topicTime: progress.topicTime ?? base.topicTime,
     selectedTopicId: progress.selectedTopicId || base.selectedTopicId,
     topicDone: progress.topicDone ?? base.topicDone,
+    lastReviewed: progress.lastReviewed ?? base.lastReviewed,
     tabsDone: progress.tabsDone ?? base.tabsDone,
     quiz: quizDoc.answers ?? base.quiz,
     selectedCourseId:
@@ -234,107 +265,8 @@ function useSectionSync(section: SectionKey) {
   );
 }
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function computeStreak(dates: string[]): number {
-  if (!dates.length) return 0;
-  const set = new Set(dates);
-  let streak = 0;
-  const cursor = new Date();
-  while (true) {
-    const key = cursor.toISOString().slice(0, 10);
-    if (set.has(key)) {
-      streak += 1;
-      cursor.setUTCDate(cursor.getUTCDate() - 1);
-    } else break;
-  }
-  return streak;
-}
-
-function formatElapsed(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
-
-// ============================================================
-// Derived helpers
-// ============================================================
-function sectionProgressPct(sectionId: string, visited: Record<string, boolean>) {
-  const sec = sections.find((s) => s.id === sectionId);
-  if (!sec || !sec.topicIds.length) return 0;
-  const done = sec.topicIds.filter((id) => visited[id]).length;
-  return Math.round((done / sec.topicIds.length) * 100);
-}
-
-function topicScore(topicId: string, quiz: QuizState) {
-  const t = topics.find((x) => x.id === topicId);
-  if (!t) return { correct: 0, total: 0, answered: 0 };
-  const entries = quiz[topicId] ?? {};
-  const answered = Object.values(entries);
-  return {
-    correct: answered.filter((a) => a.correct).length,
-    answered: answered.length,
-    total: t.questions.length,
-  };
-}
-
-function globalScore(quiz: QuizState) {
-  let correct = 0;
-  let total = 0;
-  for (const t of topics) {
-    const s = topicScore(t.id, quiz);
-    correct += s.correct;
-    total += t.questions.length;
-  }
-  return { correct, total };
-}
-
-function xpFromQuiz(quiz: QuizState) {
-  let xp = 0;
-  for (const entries of Object.values(quiz))
-    for (const a of Object.values(entries)) if (a.correct) xp += 50;
-  return xp;
-}
-
-function levelFromXp(xp: number) {
-  return Math.max(1, Math.floor(xp / 250) + 1);
-}
-function nextLevelXp(level: number) {
-  return level * 250;
-}
-
-function domainStrengths(quiz: QuizState, topicIds?: Set<string>) {
-  const buckets: Record<string, { c: number; t: number }> = {};
-  for (const t of topics) {
-    if (topicIds && !topicIds.has(t.id)) continue;
-    if (!buckets[t.domain]) buckets[t.domain] = { c: 0, t: 0 };
-    const s = topicScore(t.id, quiz);
-    buckets[t.domain].c += s.correct;
-    buckets[t.domain].t += t.questions.length;
-  }
-  return Object.entries(buckets).map(([domain, v]) => ({
-    domain,
-    score: v.t === 0 ? 0 : Math.round((v.c / v.t) * 100),
-  }));
-}
-
-function recommendedRevisions(quiz: QuizState) {
-  return topics
-    .map((t) => {
-      const s = topicScore(t.id, quiz);
-      const pct = s.answered === 0 ? null : Math.round((s.correct / s.answered) * 100);
-      return { topic: t, pct, answered: s.answered };
-    })
-    .filter((x) => x.answered >= 2 && (x.pct ?? 100) < 80)
-    .sort((a, b) => (a.pct ?? 100) - (b.pct ?? 100))
-    .slice(0, 3);
-}
+// todayISO, computeStreak, formatElapsed and the derived score/domain/revision
+// helpers are imported from lib/progress-metrics (shared with the dashboard).
 
 // ============================================================
 // Tab metadata
@@ -708,6 +640,8 @@ function Panel({
   collapsed,
   onToggleCollapse,
   onClose,
+  checked,
+  onToggleChecked,
   children,
 }: {
   tab: TabMeta;
@@ -715,6 +649,8 @@ function Panel({
   collapsed: boolean;
   onToggleCollapse: () => void;
   onClose: () => void;
+  checked: boolean;
+  onToggleChecked: () => void;
   children: React.ReactNode;
 }) {
   const Icon = tab.icon;
@@ -732,7 +668,18 @@ function Panel({
           <Icon size={14} className={tab.accent} />
           <h3 className="text-[13.5px] font-semibold text-text-primary">{title}</h3>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          <span
+            className="flex items-center gap-1.5 mr-1 text-[11px] text-text-muted"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ManualCheckbox
+              checked={checked}
+              onChange={onToggleChecked}
+              ariaLabel={`Mark ${title} done`}
+            />
+            <span className="hidden sm:inline select-none">Done</span>
+          </span>
           <button
             type="button"
             onClick={(e) => {
@@ -805,6 +752,215 @@ function ManualCheckbox({
   );
 }
 
+// ============================================================
+// FLIP reorder animation — animates [data-flip-key] children of `ref`
+// from their previous layout position to the new one whenever `deps` change.
+// Dependency-free (Web Animations API); respects prefers-reduced-motion.
+// ============================================================
+function useFlip(
+  ref: React.RefObject<HTMLElement>,
+  deps: React.DependencyList
+) {
+  const prev = useRef<Map<string, DOMRect>>(new Map());
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const nodes = Array.from(
+      el.querySelectorAll<HTMLElement>("[data-flip-key]")
+    );
+    if (!reduce) {
+      for (const node of nodes) {
+        const key = node.getAttribute("data-flip-key");
+        if (!key) continue;
+        const before = prev.current.get(key);
+        const after = node.getBoundingClientRect();
+        if (before) {
+          const dx = before.left - after.left;
+          const dy = before.top - after.top;
+          if (dx || dy) {
+            node.animate(
+              [
+                { transform: `translate(${dx}px, ${dy}px)` },
+                { transform: "translate(0, 0)" },
+              ],
+              { duration: 260, easing: "cubic-bezier(0.2, 0.65, 0.2, 1)" }
+            );
+          }
+        }
+      }
+    }
+    const next = new Map<string, DOMRect>();
+    for (const node of nodes) {
+      const key = node.getAttribute("data-flip-key");
+      if (key) next.set(key, node.getBoundingClientRect());
+    }
+    prev.current = next;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
+
+// ============================================================
+// Center modal loader — full-screen overlay shown while page data loads
+// ============================================================
+function CenterLoader({ label = "Loading your progress…" }: { label?: string }) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-bg-base/70 backdrop-blur-sm animate-fade-in"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-bg-panel/95 px-8 py-6 shadow-2xl">
+        <div className="relative">
+          <Loader2 size={34} className="animate-spin text-accent" />
+        </div>
+        <div className="text-[13px] text-text-secondary">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Top navigation bar (logo, active topic, progress, user)
+// Rendered inside the center scroll column so it scrolls away on desktop.
+// ============================================================
+function TopNav({
+  onOpenMobileNav,
+  selectedTopic,
+  visitedCount,
+  completedCount,
+  totalTopics,
+  gScore,
+  user,
+}: {
+  onOpenMobileNav: () => void;
+  selectedTopic: Topic;
+  visitedCount: number;
+  completedCount: number;
+  totalTopics: number;
+  gScore: { correct: number; total: number };
+  user: SessionUser | null;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      {/* Mobile menu button — opens the course drawer */}
+      <button
+        type="button"
+        onClick={onOpenMobileNav}
+        className="lg:hidden p-2 -ml-1 rounded-md hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+        aria-label="Open course menu"
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Logo + app name */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="w-9 h-9 rounded-md bg-gradient-to-br from-accent to-orange-600 flex items-center justify-center text-white shadow-sm shadow-accent/30">
+          <Brain size={20} />
+        </div>
+        <div className="hidden sm:block leading-tight">
+          <div className="text-sm font-semibold text-text-primary">Galaxy Brain</div>
+          <div className="text-[11px] text-text-muted">Cram today, flex tomorrow.</div>
+        </div>
+      </div>
+
+      {/* Active topic heading */}
+      <div className="flex-1 min-w-0 px-2 lg:px-4 text-center">
+        <div className="hidden sm:block text-[10.5px] uppercase tracking-wide text-text-muted truncate">
+          {selectedTopic.section}
+        </div>
+        <h1 className="text-[13px] md:text-[15px] font-semibold text-text-primary truncate">
+          {selectedTopic.title}
+        </h1>
+      </div>
+
+      {/* Overall progress — Visited + Completed stacked bars */}
+      <div className="hidden lg:flex flex-col gap-2 min-w-[220px]">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-text-secondary w-16">Visited</span>
+          <div className="flex-1 h-[5px] rounded-full bg-bg-base overflow-hidden">
+            <div
+              className="h-full bg-accent transition-all"
+              style={{ width: `${(visitedCount / totalTopics) * 100}%` }}
+            />
+          </div>
+          <span className="text-[11px] text-text-secondary w-12 text-right tabular-nums">
+            {visitedCount} / {totalTopics}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-text-secondary w-16">Completed</span>
+          <div className="flex-1 h-[5px] rounded-full bg-bg-base overflow-hidden">
+            <div
+              className="h-full bg-success transition-all"
+              style={{ width: `${(completedCount / totalTopics) * 100}%` }}
+            />
+          </div>
+          <span className="text-[11px] text-text-secondary w-12 text-right tabular-nums">
+            {completedCount} / {totalTopics}
+          </span>
+        </div>
+      </div>
+
+      <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-md bg-bg-base border border-border">
+        <Trophy size={16} className="text-accent" />
+        <div className="text-xs">
+          <div className="text-text-muted leading-3">Global Quiz Score</div>
+          <div className="font-semibold text-text-primary">
+            {gScore.correct} / {gScore.total}{" "}
+            <span className="text-text-muted">
+              ({gScore.total ? Math.round((gScore.correct / gScore.total) * 100) : 0}%)
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1">
+        {user && (
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:block text-right leading-tight">
+              <div className="text-[12px] text-text-primary font-medium">
+                {user.displayName}
+              </div>
+              <div className="text-[10px] text-text-muted font-mono">
+                {user.username}
+              </div>
+            </div>
+            <div
+              className="w-9 h-9 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center text-accent font-semibold text-sm"
+              aria-label={user.displayName}
+              title={user.username}
+            >
+              {user.displayName.charAt(0).toUpperCase()}
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await fetch("/api/auth/logout", {
+                    method: "POST",
+                    credentials: "same-origin",
+                  });
+                } finally {
+                  window.location.href = "/login";
+                }
+              }}
+              className="tip p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-danger"
+              data-tip="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Page() {
   const [hydrated, setHydrated] = useState(false);
   const [state, setState] = useState<AppState>(defaultState);
@@ -826,6 +982,9 @@ export default function Page() {
   const [topicOpenedAt, setTopicOpenedAt] = useState<number>(Date.now());
   const [now, setNow] = useState<number>(Date.now());
   const contentRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const panelsRef = useRef<HTMLDivElement>(null);
+  const tabBarRef = useRef<HTMLDivElement>(null);
 
   // drag state
   const [draggedTab, setDraggedTab] = useState<TabKey | null>(null);
@@ -929,6 +1088,7 @@ export default function Page() {
         visited: state.visited,
         topicTime: state.topicTime,
         selectedTopicId: state.selectedTopicId,
+        lastReviewed: state.lastReviewed,
       },
       1500
     );
@@ -936,6 +1096,7 @@ export default function Page() {
     state.visited,
     state.topicTime,
     state.selectedTopicId,
+    state.lastReviewed,
     hydrated,
     syncProgress,
   ]);
@@ -969,11 +1130,17 @@ export default function Page() {
   // -------- topic switch side-effects --------
   useEffect(() => {
     if (!hydrated || !state.selectedTopicId) return;
-    setState((s) =>
-      s.visited[s.selectedTopicId]
-        ? s
-        : { ...s, visited: { ...s.visited, [s.selectedTopicId]: true } }
-    );
+    // Mark visited and stamp the last-reviewed date (spaced-repetition signal).
+    setState((s) => {
+      const today = todayISO();
+      const alreadyToday = s.lastReviewed[s.selectedTopicId] === today;
+      if (s.visited[s.selectedTopicId] && alreadyToday) return s;
+      return {
+        ...s,
+        visited: { ...s.visited, [s.selectedTopicId]: true },
+        lastReviewed: { ...s.lastReviewed, [s.selectedTopicId]: today },
+      };
+    });
     setQuizMode(false);
     setCurrentQ(0);
     setShowAnswer(false);
@@ -1089,6 +1256,42 @@ export default function Page() {
   const expandAll = () =>
     setState((s) => ({ ...s, collapsedPanels: [] }));
 
+  // The "current" tab = first open panel in the window order (front-most).
+  const currentTab: TabKey | undefined = state.tabOrder.find((k) =>
+    state.openTabs.includes(k)
+  );
+  const closeAll = () => setState((s) => ({ ...s, openTabs: [] }));
+  const closeOthers = () =>
+    setState((s) => {
+      const keep = s.tabOrder.find((k) => s.openTabs.includes(k));
+      return { ...s, openTabs: keep ? [keep] : [] };
+    });
+
+  // Clicking a tab brings its panel to the FRONT of the window (top), opens it
+  // if closed, expands it if collapsed, then scrolls the panels into view under
+  // the sticky bar. Reordering is animated via the FLIP hooks below.
+  const focusTab = (k: TabKey) =>
+    setState((s) => {
+      const tabOrder = [k, ...s.tabOrder.filter((t) => t !== k)];
+      const openTabs = s.openTabs.includes(k) ? s.openTabs : [...s.openTabs, k];
+      const collapsedPanels = s.collapsedPanels.filter((t) => t !== k);
+      // Scroll the panels area to the top (just below the sticky tab bar).
+      requestAnimationFrame(() => {
+        const top = navRef.current?.offsetHeight ?? 0;
+        contentRef.current?.scrollTo({ top, behavior: "smooth" });
+      });
+      return { ...s, tabOrder, openTabs, collapsedPanels };
+    });
+
+  // Animate tab-bar chips and panels when their order/visibility changes.
+  useFlip(tabBarRef, [state.tabOrder, state.openTabs]);
+  useFlip(panelsRef, [
+    state.tabOrder,
+    state.openTabs,
+    state.collapsedPanels,
+    state.selectedTopicId,
+  ]);
+
   // -------- drag-to-reorder tab bar --------
   const handleDragStart = (k: TabKey) => () => setDraggedTab(k);
   const handleDragOver = (k: TabKey) => (e: React.DragEvent) => {
@@ -1145,133 +1348,14 @@ export default function Page() {
   }
 
   if (!selectedTopic) {
-    return (
-      <div className="flex items-center justify-center h-screen text-text-muted">
-        Loading…
-      </div>
-    );
+    return <CenterLoader label="Loading…" />;
   }
 
   const accumulatedMs = (state.topicTime[selectedTopic.id] ?? 0) + (now - topicOpenedAt);
 
   return (
-    <div className="min-h-screen flex flex-col bg-bg-base text-text-primary overflow-hidden">
-      {/* ============ TOP BAR ============ */}
-      <header className="flex-shrink-0 border-b border-border bg-bg-panel/90 backdrop-blur sticky top-0 z-40">
-        <div className="flex items-center gap-3 px-4 py-3">
-          {/* Mobile menu button — opens the course drawer */}
-          <button
-            type="button"
-            onClick={() => setMobileNavOpen(true)}
-            className="lg:hidden p-2 -ml-1 rounded-md hover:bg-bg-hover text-text-secondary hover:text-text-primary"
-            aria-label="Open course menu"
-          >
-            <Menu size={20} />
-          </button>
-
-          {/* Logo + app name */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-9 h-9 rounded-md bg-gradient-to-br from-accent to-orange-600 flex items-center justify-center text-white shadow-sm shadow-accent/30">
-              <Brain size={20} />
-            </div>
-            <div className="hidden sm:block leading-tight">
-              <div className="text-sm font-semibold text-text-primary">Galaxy Brain</div>
-              <div className="text-[11px] text-text-muted">Cram today, flex tomorrow.</div>
-            </div>
-          </div>
-
-          {/* Active topic heading — fills the space the search used to occupy */}
-          <div className="flex-1 min-w-0 px-2 lg:px-4 text-center">
-            <div className="hidden sm:block text-[10.5px] uppercase tracking-wide text-text-muted truncate">
-              {selectedTopic.section}
-            </div>
-            <h1 className="text-[13px] md:text-[15px] font-semibold text-text-primary truncate">
-              {selectedTopic.title}
-            </h1>
-          </div>
-
-          {/* Overall progress — Visited + Completed stacked bars */}
-          <div className="hidden lg:flex flex-col gap-2 min-w-[220px]">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-text-secondary w-16">Visited</span>
-              <div className="flex-1 h-[5px] rounded-full bg-bg-base overflow-hidden">
-                <div
-                  className="h-full bg-accent transition-all"
-                  style={{ width: `${(visitedCount / totalTopics) * 100}%` }}
-                />
-              </div>
-              <span className="text-[11px] text-text-secondary w-12 text-right tabular-nums">
-                {visitedCount} / {totalTopics}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-text-secondary w-16">Completed</span>
-              <div className="flex-1 h-[5px] rounded-full bg-bg-base overflow-hidden">
-                <div
-                  className="h-full bg-success transition-all"
-                  style={{ width: `${(completedCount / totalTopics) * 100}%` }}
-                />
-              </div>
-              <span className="text-[11px] text-text-secondary w-12 text-right tabular-nums">
-                {completedCount} / {totalTopics}
-              </span>
-            </div>
-          </div>
-
-          <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-md bg-bg-base border border-border">
-            <Trophy size={16} className="text-accent" />
-            <div className="text-xs">
-              <div className="text-text-muted leading-3">Global Quiz Score</div>
-              <div className="font-semibold text-text-primary">
-                {gScore.correct} / {gScore.total}{" "}
-                <span className="text-text-muted">
-                  ({gScore.total ? Math.round((gScore.correct / gScore.total) * 100) : 0}%)
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1">
-            {user && (
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:block text-right leading-tight">
-                  <div className="text-[12px] text-text-primary font-medium">
-                    {user.displayName}
-                  </div>
-                  <div className="text-[10px] text-text-muted font-mono">
-                    {user.username}
-                  </div>
-                </div>
-                <div
-                  className="w-9 h-9 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center text-accent font-semibold text-sm"
-                  aria-label={user.displayName}
-                  title={user.username}
-                >
-                  {user.displayName.charAt(0).toUpperCase()}
-                </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await fetch("/api/auth/logout", {
-                        method: "POST",
-                        credentials: "same-origin",
-                      });
-                    } finally {
-                      window.location.href = "/login";
-                    }
-                  }}
-                  className="tip p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-danger"
-                  data-tip="Sign out"
-                  aria-label="Sign out"
-                >
-                  <LogOut size={16} />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+    <div className="h-screen flex flex-col bg-bg-base text-text-primary overflow-hidden">
+      {!hydrated && <CenterLoader />}
 
       {/* ============ MAIN ============ */}
       <div className="flex-1 flex min-h-0">
@@ -1331,8 +1415,27 @@ export default function Page() {
 
         {/* ====== CENTER ====== */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Sticky tab bar */}
-          <div className="glass sticky top-0 z-20">
+          {/* Center scroll column: navbar (scrolls away on desktop) + sticky
+              tab/action bar + panels all share this one scroll context. */}
+          <div ref={contentRef} className="flex-1 overflow-y-auto">
+            {/* Navbar — scrolls away on desktop, stays pinned on mobile */}
+            <header
+              ref={navRef}
+              className="border-b border-border bg-bg-panel/90 backdrop-blur sticky top-0 z-30 lg:static lg:z-auto"
+            >
+              <TopNav
+                onOpenMobileNav={() => setMobileNavOpen(true)}
+                selectedTopic={selectedTopic}
+                visitedCount={visitedCount}
+                completedCount={completedCount}
+                totalTopics={totalTopics}
+                gScore={gScore}
+                user={user}
+              />
+            </header>
+
+            {/* Sticky tab + action bar — frozen at the top of the scroll column */}
+            <div ref={tabBarRef} className="glass lg:sticky lg:top-0 z-20">
             <div className="flex items-center gap-1 px-3 py-1.5 overflow-x-auto">
               {state.tabOrder.map((k) => {
                 const meta = TABS[k];
@@ -1344,6 +1447,7 @@ export default function Page() {
                 return (
                   <div
                     key={k}
+                    data-flip-key={k}
                     draggable
                     onDragStart={handleDragStart(k)}
                     onDragOver={handleDragOver(k)}
@@ -1352,16 +1456,11 @@ export default function Page() {
                     className={`flex items-center group rounded-t-md border-t border-l border-r ${open
                       ? "border-border bg-bg-card text-text-primary"
                       : "border-transparent bg-bg-base/40 text-text-muted hover:text-text-primary"} ${isDragging ? "tab-dragging" : ""} ${isDropTarget ? "tab-drop-target" : ""}`}
-                    title={`Drag to reorder · ${meta.label}`}
+                    title={`Click to bring to top · drag to reorder · ${meta.label}`}
                   >
                     <button
                       type="button"
-                      onClick={() => {
-                        if (!open) togglePanel(k);
-                        // scroll the panel into view
-                        const el = document.getElementById(`panel-${k}`);
-                        el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }}
+                      onClick={() => focusTab(k)}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-[12.5px]"
                     >
                       <GripVertical size={11} className="text-text-muted/50 group-hover:text-text-muted cursor-grab" />
@@ -1395,37 +1494,59 @@ export default function Page() {
             </div>
 
             {/* Action bar — always visible; stays put while the tab row scrolls */}
-            <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border">
+            <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border overflow-x-auto">
               <button
                 type="button"
                 onClick={openAll}
-                className="text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+                className="shrink-0 text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
               >
                 Open all
               </button>
               <button
                 type="button"
                 onClick={expandAll}
-                className="text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+                className="shrink-0 text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
               >
                 Expand all
               </button>
               <button
                 type="button"
                 onClick={collapseAll}
-                className="text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+                className="shrink-0 text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
               >
                 Collapse all
               </button>
-              <span className="ml-auto hidden sm:flex items-center gap-1 text-[11px] text-text-muted">
+              <span className="shrink-0 w-px h-4 bg-border mx-0.5" aria-hidden />
+              <button
+                type="button"
+                onClick={closeOthers}
+                disabled={state.openTabs.length <= 1}
+                title={
+                  currentTab
+                    ? `Keep only "${TABS[currentTab].label}" open`
+                    : "Close others"
+                }
+                className="shrink-0 inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <XSquare size={12} /> Close others
+              </button>
+              <button
+                type="button"
+                onClick={closeAll}
+                disabled={state.openTabs.length === 0}
+                className="shrink-0 inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-danger disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <X size={12} /> Close all
+              </button>
+              <span className="ml-auto shrink-0 hidden sm:flex items-center gap-1 text-[11px] text-text-muted">
                 <Clock size={11} />
                 {formatElapsed(accumulatedMs)}
               </span>
             </div>
           </div>
 
-          {/* Scrollable panels */}
-          <div ref={contentRef} className="flex-1 overflow-y-auto px-4 lg:px-6 py-5 space-y-4">
+            {/* Panels */}
+            <div ref={panelsRef} className="px-4 lg:px-6 py-5 space-y-4">
             {/* Topic header card */}
             <div className="rounded-lg border border-accent/30 bg-gradient-to-r from-bg-panel to-bg-card overflow-hidden">
               <div className="flex items-center justify-between px-5 py-3.5">
@@ -1464,7 +1585,7 @@ export default function Page() {
                 const meta = TABS[k];
                 const collapsed = isPanelCollapsed(k);
                 return (
-                  <div key={k} id={`panel-${k}`}>
+                  <div key={k} id={`panel-${k}`} data-flip-key={k}>
                     <Panel
                       tab={meta}
                       title={`${
@@ -1483,6 +1604,10 @@ export default function Page() {
                       collapsed={collapsed}
                       onToggleCollapse={() => togglePanelCollapse(k)}
                       onClose={() => closePanel(k)}
+                      checked={state.tabsDone[state.selectedTopicId]?.[k] ?? false}
+                      onToggleChecked={() =>
+                        onTabCheckboxToggle(state.selectedTopicId, k)
+                      }
                     >
                       {k === "overview" && <BeginnerPanel topic={selectedTopic} />}
                       {k === "explanation" && <ProblemPanel topic={selectedTopic} />}
@@ -1555,8 +1680,9 @@ export default function Page() {
               })}
 
             <div className="text-[11.5px] text-text-muted px-1 pb-4">
-              Tip: drag a tab to reorder · click × to close · re-open from the bar.
-              Progress saves to your browser automatically.
+              Tip: click a tab to bring its panel to the top · drag to reorder ·
+              click × to close · re-open from the bar. Progress saves automatically.
+            </div>
             </div>
           </div>
         </main>
@@ -2124,7 +2250,7 @@ function BeginnerPanel({ topic }: { topic: Topic }) {
       </div>
 
       {/* Side: Quick Reference */}
-      <aside className="rounded-md border border-accent/30 bg-accent/[0.06] p-4 h-fit sticky top-[60px]">
+      <aside className="rounded-md border border-accent/30 bg-accent/[0.06] p-4 h-fit lg:sticky lg:top-[96px]">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xl">{quickRef.icon ?? "💡"}</span>
           <h4 className="text-[13px] font-semibold text-accent">{quickRef.title}</h4>
@@ -2191,6 +2317,41 @@ function ArchitecturePanel({ topic }: { topic: Topic }) {
   );
 }
 
+// Only JavaScript and Python run in-browser (Web Worker / Pyodide).
+function runnableLang(language: string): "javascript" | "python" | null {
+  const l = language.toLowerCase();
+  if (l === "javascript" || l === "js" || l === "node" || l === "nodejs")
+    return "javascript";
+  if (l === "python" || l === "py" || l === "python3") return "python";
+  return null;
+}
+
+function RunOutput({ output }: { output: RunResult }) {
+  const empty =
+    !output.stdout && !output.stderr && !output.error && output.result == null;
+  return (
+    <div className="rounded-md border border-border bg-[#0d1117] overflow-hidden animate-fade-in">
+      <div className="px-3 py-1.5 border-b border-border bg-bg-base/40 text-[11px] uppercase tracking-wide text-text-muted">
+        Output
+      </div>
+      <div className="p-3 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap max-h-72 overflow-auto">
+        {empty && <span className="text-text-muted italic">(no output)</span>}
+        {output.stdout && <div className="text-text-primary">{output.stdout}</div>}
+        {output.stderr && <div className="text-yellow-400">{output.stderr}</div>}
+        {output.result != null && (
+          <div className="text-accent">⇒ {output.result}</div>
+        )}
+        {output.error && (
+          <div className="mt-1 flex items-start gap-1.5 text-danger">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            <span>{output.error}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CodePanel({
   topic,
   activeTab,
@@ -2203,6 +2364,45 @@ function CodePanel({
   const examples: CodeExample[] = topic.codeExamples ?? [topic.codeExample];
   const idx = Math.min(activeTab, examples.length - 1);
   const ex = examples[idx];
+  const runLang = runnableLang(ex.language);
+
+  const [running, setRunning] = useState(false);
+  const [pyLoading, setPyLoading] = useState(false);
+  const [output, setOutput] = useState<RunResult | null>(null);
+
+  // Clear stale output whenever the shown example changes (tab or topic switch).
+  useEffect(() => {
+    setOutput(null);
+  }, [topic.id, idx]);
+
+  const onRun = useCallback(async () => {
+    if (!runLang) return;
+    setRunning(true);
+    setOutput(null);
+    try {
+      if (runLang === "javascript") {
+        setOutput(await runJavaScript(ex.code));
+      } else {
+        // Show the modal loader only for Pyodide's one-time cold start.
+        const cold = !isPyodideReady();
+        if (cold) setPyLoading(true);
+        try {
+          setOutput(await runPython(ex.code));
+        } finally {
+          if (cold) setPyLoading(false);
+        }
+      }
+    } catch (err) {
+      setOutput({
+        stdout: "",
+        stderr: "",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setRunning(false);
+    }
+  }, [runLang, ex.code]);
+
   return (
     <div className="space-y-2">
       {examples.length > 1 && (
@@ -2224,6 +2424,44 @@ function CodePanel({
         </div>
       )}
       <CodeBlock example={ex} />
+
+      {runLang && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={running}
+            className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-1.5 rounded-md bg-accent text-bg-base hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {running ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Running…
+              </>
+            ) : (
+              <>
+                <Play size={14} /> Run {runLang === "python" ? "Python" : "JavaScript"}
+              </>
+            )}
+          </button>
+          {output && !running && (
+            <button
+              type="button"
+              onClick={() => setOutput(null)}
+              className="text-[11.5px] px-2.5 py-1 rounded-md border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+            >
+              Clear output
+            </button>
+          )}
+          <span className="text-[11px] text-text-muted">
+            Runs in your browser ·{" "}
+            {runLang === "python" ? "Pyodide (WASM)" : "sandboxed Web Worker"}
+          </span>
+        </div>
+      )}
+
+      {output && <RunOutput output={output} />}
+
+      {pyLoading && <CenterLoader label="Setting up Python runtime…" />}
     </div>
   );
 }
@@ -2285,6 +2523,26 @@ function QuizPanel({
   useEffect(() => {
     if (!quizMode) setShowSummary(false);
   }, [quizMode]);
+
+  // Elimination is a pure FE aid (solve-by-elimination). Keyed by question
+  // index, ephemeral, not persisted. Cleared when the topic changes.
+  const [eliminated, setEliminated] = useState<
+    Record<number, Array<"A" | "B" | "C" | "D">>
+  >({});
+  useEffect(() => {
+    setEliminated({});
+  }, [topic.id]);
+  const toggleEliminate = (qIdx: number, letter: "A" | "B" | "C" | "D") => {
+    setEliminated((prev) => {
+      const cur = prev[qIdx] ?? [];
+      const next = cur.includes(letter)
+        ? cur.filter((l) => l !== letter)
+        : [...cur, letter];
+      return { ...prev, [qIdx]: next };
+    });
+    // If the option being eliminated was the current pick, clear the pick.
+    if (selectedAnswer === letter) setSelectedAnswer(null);
+  };
 
   if (!quizMode) {
     return (
@@ -2523,48 +2781,92 @@ function QuizPanel({
             Question {safeQ + 1} / {totalQ}
           </span>
         </div>
-        <div className="text-[15px] leading-relaxed mb-4">{q.q}</div>
+        <div className="text-[15px] leading-relaxed mb-2">{q.q}</div>
+        {!showAnswer && (
+          <div className="text-[11.5px] text-text-muted mb-3 flex items-center gap-1.5">
+            <Ban size={12} /> Cross out options you can rule out to solve by
+            elimination.
+          </div>
+        )}
 
         <div className="grid gap-2">
           {optionLetters.map((letter, idx) => {
             const text = q.options[idx];
             const isSelected = selectedAnswer === letter;
             const isCorrect = letter === correctLetter;
-            let cls = "quiz-option text-left p-3 rounded-md border transition-colors flex items-start gap-3";
+            const isEliminated =
+              !showAnswer && (eliminated[safeQ] ?? []).includes(letter);
+            let cls =
+              "quiz-option rounded-md border transition-colors flex items-stretch overflow-hidden";
             if (!showAnswer) {
-              cls += isSelected ? " border-accent bg-accent/10" : " border-border bg-bg-base hover:bg-bg-hover";
+              cls += isEliminated
+                ? " border-border bg-bg-base/40 opacity-55"
+                : isSelected
+                ? " border-accent bg-accent/10"
+                : " border-border bg-bg-base hover:bg-bg-hover";
             } else {
               if (isCorrect) cls += " border-success bg-success/15 text-text-primary";
               else if (isSelected && !isCorrect) cls += " border-danger bg-danger/10 text-text-primary";
               else cls += " border-border bg-bg-base/60 text-text-muted";
             }
             return (
-              <button
-                key={letter}
-                type="button"
-                onClick={() => !showAnswer && setSelectedAnswer(letter)}
-                className={cls}
-                disabled={showAnswer}
-                aria-pressed={isSelected}
-              >
-                <span
-                  className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center font-mono text-sm font-semibold ${
-                    showAnswer && isCorrect
-                      ? "bg-success text-bg-base"
-                      : showAnswer && isSelected && !isCorrect
-                      ? "bg-danger text-white"
-                      : isSelected
-                      ? "bg-accent text-bg-base"
-                      : "bg-bg-panel text-text-secondary border border-border"
-                  }`}
+              <div key={letter} className={cls}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    !showAnswer && !isEliminated && setSelectedAnswer(letter)
+                  }
+                  className="text-left p-3 flex items-start gap-3 flex-1 min-w-0"
+                  disabled={showAnswer || isEliminated}
+                  aria-pressed={isSelected}
                 >
-                  {letter}
-                </span>
-                <span className="text-[13.5px] leading-snug text-text-primary text-left flex-1">
-                  {text.replace(/^[A-D]\.\s*/, "")}
-                </span>
-                {showAnswer && isCorrect && <CheckCircle2 size={18} className="text-success shrink-0" />}
-              </button>
+                  <span
+                    className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center font-mono text-sm font-semibold ${
+                      showAnswer && isCorrect
+                        ? "bg-success text-bg-base"
+                        : showAnswer && isSelected && !isCorrect
+                        ? "bg-danger text-white"
+                        : isSelected
+                        ? "bg-accent text-bg-base"
+                        : "bg-bg-panel text-text-secondary border border-border"
+                    }`}
+                  >
+                    {letter}
+                  </span>
+                  <span
+                    className={`text-[13.5px] leading-snug text-left flex-1 ${
+                      isEliminated
+                        ? "line-through text-text-muted"
+                        : "text-text-primary"
+                    }`}
+                  >
+                    {text.replace(/^[A-D]\.\s*/, "")}
+                  </span>
+                  {showAnswer && isCorrect && (
+                    <CheckCircle2 size={18} className="text-success shrink-0" />
+                  )}
+                </button>
+                {!showAnswer && (
+                  <button
+                    type="button"
+                    onClick={() => toggleEliminate(safeQ, letter)}
+                    className={`shrink-0 px-2.5 flex items-center justify-center border-l border-border/60 transition-colors ${
+                      isEliminated
+                        ? "text-accent hover:text-accent-hover"
+                        : "text-text-muted hover:text-danger hover:bg-bg-hover"
+                    }`}
+                    title={isEliminated ? "Restore option" : "Eliminate option"}
+                    aria-label={
+                      isEliminated
+                        ? `Restore option ${letter}`
+                        : `Eliminate option ${letter}`
+                    }
+                    aria-pressed={isEliminated}
+                  >
+                    {isEliminated ? <Undo2 size={15} /> : <Ban size={15} />}
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -2641,7 +2943,7 @@ function QuizPanel({
       </div>
 
       {/* Score tracker side */}
-      <aside className="rounded-md border border-border bg-bg-card/40 p-4 space-y-3 h-fit sticky top-[60px]">
+      <aside className="rounded-md border border-border bg-bg-card/40 p-4 space-y-3 h-fit lg:sticky lg:top-[96px]">
         <div>
           <div className="text-[11px] uppercase tracking-wide text-text-muted">Score</div>
           <div className="text-2xl font-bold text-accent">

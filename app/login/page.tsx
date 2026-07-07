@@ -80,7 +80,7 @@ function LoginInner() {
                 spellCheck={false}
                 required
                 className="w-full pl-9 pr-3 py-2 rounded-md bg-bg-base border border-border focus:border-accent focus:outline-none text-sm"
-                placeholder="kumar-user"
+                placeholder="username"
               />
             </div>
           </label>

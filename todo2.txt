@@ -1,0 +1,98 @@
+================================================================
+PENDING WORK — pick up in a future session
+(everything below is NOT built yet; all other original requests
+are already done & verified.)
+================================================================
+
+WHAT'S ALREADY SCAFFOLDED (so the dashboard is ~half done)
+----------------------------------------------------------
+- lib/progress-metrics.ts  <- NEW shared, pure metrics module. Already contains
+  everything the dashboard needs:
+    * topicScore / globalScore / xpFromQuiz / levelFromXp / nextLevelXp
+    * computeStreak, longestStreak, formatElapsed, sectionProgressPct
+    * domainStrengths, recommendedRevisions
+    * spacedRepetition(quiz, visited, topicDone, lastReviewed, today?, limit?)
+        -> ReviewItem[]  (adaptive "due for review" list)
+    * buildHeatmap(dates, weeks=53, today?) -> { weeks, monthLabels, total }
+        (GitHub-style calendar; columns = weeks, rows = Sun..Sat)
+  app/page.tsx now imports all shared helpers from here (duplicates removed).
+
+- app/page.tsx ALREADY tracks + persists `lastReviewed: Record<topicId, ISO date>`
+  (in AppState, defaultState, mergeFromSections, the progress sync effect, and it
+  is stamped on every topic open). So real spaced-repetition timestamps are being
+  collected NOW — the dashboard just has to read them.
+
+================================================================
+TASK 10 — PER-USER DASHBOARD  (do first; ~half scaffolded)
+================================================================
+Goal: a dedicated /dashboard route (independent per user — auth already scopes
+data) with adaptive spaced-repetition + a streak heatmap.
+
+1. Create app/dashboard/page.tsx (client component):
+   - Fetch GET /api/progress (same pattern as app/page.tsx load()): 401 -> redirect
+     to /login; graceful fallback on error; show a loader while fetching.
+   - Use lib/progress-metrics for ALL math:
+       * Stat cards: current streak (computeStreak) + longest (longestStreak),
+         visited/completed counts, global accuracy (globalScore), XP + level.
+       * Heatmap: buildHeatmap(loginDates). Weeks as columns, 7 rows, accent for
+         active days, month labels from monthLabels, per-cell tooltip.
+       * "Due for review": spacedRepetition(quiz, visited, topicDone, lastReviewed).
+         Each ReviewItem -> clickable row linking to /?topic=<id>.
+       * Domain radar: recharts RadarChart with domainStrengths(quiz).
+   - NOTE: CenterLoader currently lives inside app/page.tsx (not exported). Export it
+     or move it to its own file and import in both.
+
+2. Deep-link in app/page.tsx (was about to add, NOT done):
+   - helper courseOfTopic(topicId) -> section containing it -> course whose
+     sectionIds include that section.
+   - In load(), after computing `merged`: read
+     new URLSearchParams(window.location.search).get("topic"); if valid topic id,
+     set merged.selectedTopicId, merged.selectedCourseId = courseOfTopic(id),
+     and expand its section.
+
+3. Dashboard nav entry in TopNav (app/page.tsx): an <a href="/dashboard"> icon
+   button (lucide LayoutDashboard or BarChart3) in the right cluster before the
+   {user && ...} block; import the icon in the lucide-react import list.
+
+4. Verify: npx tsc --noEmit ; npm run build.
+
+================================================================
+TASK 8 — KANBAN BOARD  (do last)
+================================================================
+Goal: one board, columns Backlog -> To Do -> In Progress -> Done, per-user,
+dnd-kit, cards with priority + due date + CRUD.
+
+1. Install: npm i @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+   (do NOT use react-beautiful-dnd — unmaintained.)
+
+2. Persist per user via a NEW progress section:
+   - app/api/progress/route.ts: add "kanban" to the SECTIONS tuple.
+   - Client saves PUT { section: "kanban", patch: { board } }. (Firestore replaces
+     array fields on merge-set, so saving the whole board each time is fine.)
+
+3. Create app/kanban/page.tsx (client component):
+   - Model: type Priority = "low"|"medium"|"high"|"urgent";
+     type Card = { id; title; description?; priority; due?; createdAt };
+     type ColumnId = "backlog"|"todo"|"inprogress"|"done";
+     type Board = Record<ColumnId, Card[]>;   // ordered arrays per column
+   - dnd-kit "multiple containers" pattern: DndContext + a SortableContext per
+     column + useSortable cards; onDragOver moves across columns, onDragEnd
+     reorders/finalizes.
+   - Features: quick-add per column, edit (modal/inline), delete; priority badge
+     colors; due-date badge (red when overdue); per-column counts; empty states;
+     debounced save on change. Fetch board on mount (sections.kanban.board),
+     default empty columns. 401 -> /login.
+
+4. Kanban nav entry in TopNav (same pattern; lucide Trello/KanbanSquare/Columns3
+   -> <a href="/kanban">).
+
+5. Verify: npx tsc --noEmit ; npm run build.
+
+================================================================
+WORKFLOW REMINDERS
+================================================================
+- Never commit or push. At each checkpoint: verify ship-ready, then `git add` ONLY.
+  (This repo has a Bash(git add:*) DENY rule, so staging is done by the user.)
+- Master is protected — branch before any commit.
+- Files to stage for work done so far:
+    git add app/page.tsx app/login/page.tsx lib/code-runner.ts lib/progress-metrics.ts
