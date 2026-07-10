@@ -314,6 +314,30 @@ function normalizeSqlValue(v: SqlValue): string | number | null {
   return "[blob]";
 }
 
+type SqlTable = { columns: string[]; rows: (string | number | null)[][] };
+
+/** Execute `code` (after optional `setup`) in a fresh DB; return the last
+ *  rows-returning result set, or null for DDL/DML that returns nothing. */
+function execToTable(SQL: SqlJsStatic, code: string, setup?: string): SqlTable | null {
+  const db = new SQL.Database();
+  try {
+    if (setup && setup.trim()) db.run(setup);
+    const results = db.exec(code);
+    const last = [...results].reverse().find((r) => r.columns.length > 0);
+    if (!last) return null;
+    return {
+      columns: last.columns,
+      rows: last.values.map((row) => row.map(normalizeSqlValue)),
+    };
+  } finally {
+    try {
+      db.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /**
  * Run SQL in a fresh in-browser SQLite database. `setup` (if given) is executed
  * first — typically CREATE TABLE + INSERT — then `code` runs against it. The
@@ -333,41 +357,92 @@ export async function runSql(code: string, setup?: string): Promise<RunResult> {
     };
   }
 
-  let db: SqlDatabase | null = null;
   try {
-    db = new SQL.Database();
-    if (setup && setup.trim()) db.run(setup);
-
-    const results = db.exec(code);
-    // Prefer the last result set that actually has columns/rows.
-    const last = [...results].reverse().find((r) => r.columns.length > 0);
-
-    if (!last) {
+    const table = execToTable(SQL, code, setup);
+    if (!table) {
       return {
         stdout: "OK — statement executed (no rows returned).",
         stderr: "",
       };
     }
-
-    return {
-      stdout: "",
-      stderr: "",
-      table: {
-        columns: last.columns,
-        rows: last.values.map((row) => row.map(normalizeSqlValue)),
-      },
-    };
+    return { stdout: "", stderr: "", table };
   } catch (err) {
     return {
       stdout: "",
       stderr: "",
       error: err instanceof Error ? err.message || String(err) : String(err),
     };
-  } finally {
-    try {
-      db?.close();
-    } catch {
-      /* ignore */
-    }
+  }
+}
+
+/** Normalize a result set to a comparable string form. Rows are compared as an
+ *  unordered multiset unless `orderMatters`. Cell values compared as strings. */
+function tableSignature(t: SqlTable, orderMatters: boolean): string {
+  const rowStrings = t.rows.map((r) =>
+    r.map((c) => (c === null ? " NULL" : String(c))).join("")
+  );
+  if (!orderMatters) rowStrings.sort();
+  // Column count matters (so "too many/few columns" is wrong) but not names,
+  // since learners may alias differently than the reference solution.
+  return `cols=${t.columns.length}${rowStrings.join("")}`;
+}
+
+export type CheckedRunResult = RunResult & {
+  /** true/false once judged; undefined when it couldn't be judged (user error,
+   *  or the exercise defines no solution). */
+  correct?: boolean;
+};
+
+/**
+ * Run a learner's SQL and judge correctness by comparing its result set to the
+ * reference `solution` query's result — both run against the same `setup` in
+ * separate fresh databases. Correctness is result-based, never text-based.
+ */
+export async function runSqlChecked(
+  code: string,
+  opts: { setup?: string; solution?: string; orderMatters?: boolean }
+): Promise<CheckedRunResult> {
+  let SQL: SqlJsStatic;
+  try {
+    SQL = await ensureSqlJs();
+  } catch (err) {
+    return {
+      stdout: "",
+      stderr: "",
+      error:
+        err instanceof Error ? err.message : "Failed to load the SQL runtime.",
+    };
+  }
+
+  // Run the learner's query.
+  let userTable: SqlTable | null;
+  try {
+    userTable = execToTable(SQL, code, opts.setup);
+  } catch (err) {
+    return {
+      stdout: "",
+      stderr: "",
+      error: err instanceof Error ? err.message || String(err) : String(err),
+    };
+  }
+
+  const base: RunResult = userTable
+    ? { stdout: "", stderr: "", table: userTable }
+    : { stdout: "OK — statement executed (no rows returned).", stderr: "" };
+
+  // Judge against the reference solution when one is provided and the learner's
+  // query actually produced a result set.
+  if (!opts.solution || !userTable) return base;
+  try {
+    const expected = execToTable(SQL, opts.solution, opts.setup);
+    if (!expected) return base; // solution returns no rows → nothing to compare
+    const orderMatters = !!opts.orderMatters;
+    const correct =
+      tableSignature(userTable, orderMatters) ===
+      tableSignature(expected, orderMatters);
+    return { ...base, correct };
+  } catch {
+    // A broken reference solution shouldn't block the learner.
+    return base;
   }
 }

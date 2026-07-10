@@ -33,6 +33,7 @@ import {
   LogOut,
   Copy,
   Check,
+  RotateCcw,
   Clock,
   X,
   Maximize2,
@@ -68,6 +69,7 @@ import {
   type Topic,
   type Question,
   type CodeExample,
+  type TryItQuestion,
   type Subtopic,
 } from "@/lib/topics";
 import {
@@ -76,11 +78,13 @@ import {
   runSql,
   isPyodideReady,
   isSqlReady,
+  runSqlChecked,
   type RunResult,
 } from "@/lib/code-runner";
 import {
   type TabKey,
   type QuizState,
+  type TryItState,
   todayISO,
   computeStreak,
   formatElapsed,
@@ -127,9 +131,10 @@ type AppState = {
   topicDone: Record<string, boolean>;
   lastReviewed: Record<string, string>; // topicId -> last-opened ISO date (spaced repetition)
   tabsDone: Record<string, Partial<Record<TabKey, boolean>>>;
+  tryIt: TryItState; // topicId -> questionId -> { attempted, solved }
 };
 
-type SectionKey = "profile" | "progress" | "quiz" | "ui";
+type SectionKey = "profile" | "progress" | "quiz" | "tryit" | "ui";
 
 type SessionUser = { username: string; displayName: string };
 
@@ -182,6 +187,7 @@ function defaultState(): AppState {
     topicDone: {},
     lastReviewed: {},
     tabsDone: {},
+    tryIt: {},
   };
 }
 
@@ -204,6 +210,7 @@ function mergeFromSections(
     tabsDone?: Record<string, Partial<Record<TabKey, boolean>>>;
   };
   const quizDoc = (raw.quiz ?? {}) as { answers?: QuizState };
+  const tryItDoc = (raw.tryit ?? {}) as { attempts?: TryItState };
   const ui = (raw.ui ?? {}) as Partial<AppState>;
 
   return {
@@ -218,6 +225,7 @@ function mergeFromSections(
     lastReviewed: progress.lastReviewed ?? base.lastReviewed,
     tabsDone: progress.tabsDone ?? base.tabsDone,
     quiz: quizDoc.answers ?? base.quiz,
+    tryIt: tryItDoc.attempts ?? base.tryIt,
     selectedCourseId:
       typeof (ui as { selectedCourseId?: string }).selectedCourseId === "string" &&
       courses.some(
@@ -322,7 +330,7 @@ const TABS: Record<TabKey, TabMeta> = {
   },
   analogy: {
     key: "analogy",
-    label: "Analogy",
+    label: "Real World Analogy",
     icon: Lightbulb,
     accent: "text-purple-400",
     border: "gradient-border-purple",
@@ -330,7 +338,7 @@ const TABS: Record<TabKey, TabMeta> = {
   },
   code: {
     key: "code",
-    label: "Code",
+    label: "Code Example",
     icon: Code2,
     accent: "text-green-400",
     border: "gradient-border-green",
@@ -338,7 +346,7 @@ const TABS: Record<TabKey, TabMeta> = {
   },
   quiz: {
     key: "quiz",
-    label: "Quiz",
+    label: "Quiz Time",
     icon: HelpCircle,
     accent: "text-red-400",
     border: "gradient-border-red",
@@ -1100,6 +1108,7 @@ export default function Page() {
   const syncProfile = useSectionSync("profile");
   const syncProgress = useSectionSync("progress");
   const syncQuiz = useSectionSync("quiz");
+  const syncTryIt = useSectionSync("tryit");
   const syncUi = useSectionSync("ui");
 
   // -------- hydrate from /api/progress (sharded) --------
@@ -1747,11 +1756,38 @@ export default function Page() {
                       {k === "diagram" && <ArchitecturePanel topic={selectedTopic} />}
                       {k === "analogy" && <AnalogyPanel topic={selectedTopic} />}
                       {k === "code" && (
-                        <CodePanel
-                          topic={selectedTopic}
-                          activeTab={activeCodeTab}
-                          setActiveTab={setActiveCodeTab}
-                        />
+                        <>
+                          <CodePanel
+                            topic={selectedTopic}
+                            activeTab={activeCodeTab}
+                            setActiveTab={setActiveCodeTab}
+                          />
+                          <TryItPanel
+                            topic={selectedTopic}
+                            tryIt={state.tryIt}
+                            onAttempt={(questionId, next) => {
+                              setState((s) => ({
+                                ...s,
+                                tryIt: {
+                                  ...s.tryIt,
+                                  [selectedTopic.id]: {
+                                    ...(s.tryIt[selectedTopic.id] ?? {}),
+                                    [questionId]: next,
+                                  },
+                                },
+                              }));
+                              // Per-question dotted-path patch — merges into
+                              // userProgress/{user}/sections/tryit without
+                              // clobbering other questions.
+                              syncTryIt(
+                                {
+                                  [`attempts.${selectedTopic.id}.${questionId}`]: next,
+                                },
+                                500
+                              );
+                            }}
+                          />
+                        </>
                       )}
                       {k === "quiz" && (
                         <QuizPanel
@@ -2597,6 +2633,132 @@ function RunOutput({ output }: { output: RunResult }) {
   );
 }
 
+// Editable code editor (textarea + line gutter). Used for runnable code
+// examples and Try-it exercises so learners can tweak and re-run. Tab inserts
+// two spaces; Ctrl/⌘+Enter runs. No live syntax highlight while editing (same
+// tradeoff as the /playground editor).
+function EditableCodeEditor({
+  language,
+  title,
+  value,
+  original,
+  onChange,
+  onReset,
+  onRun,
+  running,
+}: {
+  language: string;
+  title?: string;
+  value: string;
+  original?: string;
+  onChange: (v: string) => void;
+  onReset?: () => void;
+  onRun?: () => void;
+  running?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  const lineCount = value.split("\n").length;
+  const dirty = original != null && value !== original;
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (onRun && !running) onRun();
+      return;
+    }
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const el = e.currentTarget;
+      const s = el.selectionStart;
+      const en = el.selectionEnd;
+      const next = value.slice(0, s) + "  " + value.slice(en);
+      onChange(next);
+      requestAnimationFrame(() => {
+        el.selectionStart = el.selectionEnd = s + 2;
+      });
+    }
+  };
+
+  return (
+    <div className="rounded-md border border-border bg-[#0d1117] overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-bg-base/40 border-b border-border">
+        <div className="flex items-center gap-2 text-[11px] text-text-muted min-w-0">
+          <span className="font-mono px-1.5 py-0.5 rounded bg-bg-base border border-border text-accent shrink-0">
+            {language.toUpperCase()}
+          </span>
+          {title && <span className="truncate">{title}</span>}
+          <span className="text-text-muted/50 shrink-0 hidden sm:inline">· editable</span>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {dirty && onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              className="flex items-center gap-1 text-[11px] text-text-muted hover:text-text-primary px-2 py-1 rounded hover:bg-bg-hover"
+              aria-label="Reset code"
+            >
+              <RotateCcw size={12} /> Reset
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onCopy}
+            className="flex items-center gap-1 text-[11px] text-text-muted hover:text-text-primary px-2 py-1 rounded hover:bg-bg-hover"
+            aria-label="Copy code"
+          >
+            {copied ? (
+              <>
+                <Check size={12} className="text-success" /> Copied
+              </>
+            ) : (
+              <>
+                <Copy size={12} /> Copy
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+      <div className="flex max-h-72 overflow-auto font-mono text-[12.5px] leading-[1.7]">
+        <div
+          ref={gutterRef}
+          aria-hidden
+          className="select-none py-2 pl-3 pr-2 text-right text-text-muted/50 border-r border-border/40 bg-bg-base/30"
+        >
+          {Array.from({ length: lineCount }, (_, i) => (
+            <div key={i}>{i + 1}</div>
+          ))}
+        </div>
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          onScroll={(e) => {
+            if (gutterRef.current)
+              gutterRef.current.scrollTop = e.currentTarget.scrollTop;
+          }}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          wrap="off"
+          rows={Math.min(Math.max(lineCount, 3), 16)}
+          className="flex-1 min-w-0 resize-none bg-transparent text-text-primary outline-none py-2 px-3 leading-[1.7] whitespace-pre overflow-auto"
+        />
+      </div>
+    </div>
+  );
+}
+
 function CodePanel({
   topic,
   activeTab,
@@ -2615,25 +2777,33 @@ function CodePanel({
   const [pyLoading, setPyLoading] = useState(false);
   const [sqlLoading, setSqlLoading] = useState(false);
   const [output, setOutput] = useState<RunResult | null>(null);
+  // Per-tab edited code (learners can tweak runnable examples and re-run).
+  const [editedCode, setEditedCode] = useState<Record<number, string>>({});
 
-  // Clear stale output whenever the shown example changes (tab or topic switch).
+  const currentCode = editedCode[idx] ?? ex.code;
+
+  // Clear stale output when the shown example changes; drop edits on topic switch.
   useEffect(() => {
     setOutput(null);
   }, [topic.id, idx]);
+  useEffect(() => {
+    setEditedCode({});
+  }, [topic.id]);
 
   const onRun = useCallback(async () => {
     if (!runLang) return;
+    const code = editedCode[idx] ?? ex.code;
     setRunning(true);
     setOutput(null);
     try {
       if (runLang === "javascript") {
-        setOutput(await runJavaScript(ex.code));
+        setOutput(await runJavaScript(code));
       } else if (runLang === "sql") {
         // Show the modal loader only for sql.js's one-time cold start.
         const cold = !isSqlReady();
         if (cold) setSqlLoading(true);
         try {
-          setOutput(await runSql(ex.code, ex.setup));
+          setOutput(await runSql(code, ex.setup));
         } finally {
           if (cold) setSqlLoading(false);
         }
@@ -2642,7 +2812,7 @@ function CodePanel({
         const cold = !isPyodideReady();
         if (cold) setPyLoading(true);
         try {
-          setOutput(await runPython(ex.code));
+          setOutput(await runPython(code));
         } finally {
           if (cold) setPyLoading(false);
         }
@@ -2656,7 +2826,7 @@ function CodePanel({
     } finally {
       setRunning(false);
     }
-  }, [runLang, ex.code, ex.setup]);
+  }, [runLang, editedCode, idx, ex.code, ex.setup]);
 
   return (
     <div className="space-y-2">
@@ -2678,7 +2848,26 @@ function CodePanel({
           ))}
         </div>
       )}
-      <CodeBlock example={ex} />
+      {runLang ? (
+        <EditableCodeEditor
+          language={ex.language}
+          title={ex.title}
+          value={currentCode}
+          original={ex.code}
+          onChange={(v) => setEditedCode((m) => ({ ...m, [idx]: v }))}
+          onReset={() =>
+            setEditedCode((m) => {
+              const n = { ...m };
+              delete n[idx];
+              return n;
+            })
+          }
+          onRun={onRun}
+          running={running}
+        />
+      ) : (
+        <CodeBlock example={ex} />
+      )}
 
       {runLang && (
         <div className="flex flex-wrap items-center gap-2">
@@ -2727,6 +2916,235 @@ function CodePanel({
 
       {pyLoading && <CenterLoader label="Setting up Python runtime…" />}
       {sqlLoading && <CenterLoader label="Setting up SQL runtime…" />}
+    </div>
+  );
+}
+
+// ============================================================
+// Difficulty pill — shared by the quiz header and Try-it exercises.
+// ============================================================
+function DifficultyPill({ level }: { level: "easy" | "medium" | "hard" }) {
+  const styles: Record<string, string> = {
+    easy: "bg-green-500/15 text-green-400 border-green-500/30",
+    medium: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+    hard: "bg-red-500/15 text-red-400 border-red-500/30",
+  };
+  return (
+    <span
+      className={`text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded border ${styles[level]}`}
+    >
+      {level}
+    </span>
+  );
+}
+
+// ============================================================
+// Try-it — one hands-on SQL exercise: editable query, its own Run button,
+// result table, and result-based correctness feedback. Attempt state is
+// tracked per question (attempted / solved) via onAttempt.
+// ============================================================
+function TryItCard({
+  question,
+  index,
+  status,
+  onAttempt,
+}: {
+  question: TryItQuestion;
+  index: number;
+  status: { attempted: boolean; solved: boolean } | undefined;
+  onAttempt: (questionId: string, next: { attempted: boolean; solved: boolean }) => void;
+}) {
+  const [code, setCode] = useState(question.starter);
+  const [output, setOutput] = useState<RunResult | null>(null);
+  const [correct, setCorrect] = useState<boolean | undefined>(undefined);
+  const [running, setRunning] = useState(false);
+  const [sqlLoading, setSqlLoading] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+
+  // Reset the editor when navigating to a different question in the same slot.
+  useEffect(() => {
+    setCode(question.starter);
+    setOutput(null);
+    setCorrect(undefined);
+    setShowHint(false);
+  }, [question.id, question.starter]);
+
+  const solved = status?.solved ?? false;
+  const attempted = status?.attempted ?? false;
+
+  const onRun = useCallback(async () => {
+    setRunning(true);
+    setOutput(null);
+    setCorrect(undefined);
+    const cold = !isSqlReady();
+    if (cold) setSqlLoading(true);
+    try {
+      const res = await runSqlChecked(code, {
+        setup: question.setup,
+        solution: question.solution,
+        orderMatters: question.orderMatters,
+      });
+      setOutput(res);
+      setCorrect(res.correct);
+      // Attempted flips true on any run; solved stays sticky once achieved.
+      onAttempt(question.id, {
+        attempted: true,
+        solved: solved || res.correct === true,
+      });
+    } catch (err) {
+      setOutput({
+        stdout: "",
+        stderr: "",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      if (cold) setSqlLoading(false);
+      setRunning(false);
+    }
+  }, [code, question, solved, onAttempt]);
+
+  return (
+    <div
+      className={`rounded-lg border p-4 space-y-3 ${
+        solved
+          ? "border-green-500/30 bg-green-500/[0.04]"
+          : "border-border bg-bg-card/40"
+      }`}
+    >
+      {/* Prompt row */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2 min-w-0">
+          <span className="shrink-0 w-6 h-6 rounded-full bg-accent/15 border border-accent/30 text-accent text-[12px] font-semibold flex items-center justify-center">
+            {index + 1}
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <DifficultyPill level={question.difficulty} />
+              {solved ? (
+                <span className="inline-flex items-center gap-1 text-[11px] text-green-400 font-medium">
+                  <CheckCircle2 size={13} /> Solved
+                </span>
+              ) : attempted ? (
+                <span className="inline-flex items-center gap-1 text-[11px] text-yellow-400 font-medium">
+                  <Circle size={13} /> Attempted
+                </span>
+              ) : (
+                <span className="text-[11px] text-text-muted">Not attempted</span>
+              )}
+            </div>
+            <p className="text-[13.5px] text-text-primary mt-1.5 leading-relaxed">
+              {renderBold(question.prompt)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {question.hint && (
+        <div className="pl-8">
+          <button
+            type="button"
+            onClick={() => setShowHint((s) => !s)}
+            className="text-[11.5px] text-accent hover:underline"
+          >
+            {showHint ? "Hide hint" : "Show hint"}
+          </button>
+          {showHint && (
+            <div className="mt-1 text-[12px] text-text-secondary bg-bg-base/50 border border-border rounded px-2.5 py-1.5">
+              {renderBold(question.hint)}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="pl-8 space-y-2">
+        <EditableCodeEditor
+          language="sql"
+          value={code}
+          original={question.starter}
+          onChange={setCode}
+          onReset={() => setCode(question.starter)}
+          onRun={onRun}
+          running={running}
+        />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={running}
+            className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-1.5 rounded-md bg-accent text-bg-base hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {running ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Running…
+              </>
+            ) : (
+              <>
+                <Play size={14} /> Run &amp; Check
+              </>
+            )}
+          </button>
+          {correct === true && (
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-green-400">
+              <CheckCircle2 size={15} /> Correct — your result matches the expected report.
+            </span>
+          )}
+          {correct === false && (
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-yellow-400">
+              <AlertCircle size={15} /> Not quite — the rows don&apos;t match yet. Keep tweaking.
+            </span>
+          )}
+        </div>
+
+        {output && <RunOutput output={output} />}
+      </div>
+
+      {sqlLoading && <CenterLoader label="Setting up SQL runtime…" />}
+    </div>
+  );
+}
+
+function TryItPanel({
+  topic,
+  tryIt,
+  onAttempt,
+}: {
+  topic: Topic;
+  tryIt: TryItState;
+  onAttempt: (questionId: string, next: { attempted: boolean; solved: boolean }) => void;
+}) {
+  const questions = topic.tryIt ?? [];
+  if (!questions.length) return null;
+
+  const byTopic = tryIt[topic.id] ?? {};
+  const solvedCount = questions.filter((q) => byTopic[q.id]?.solved).length;
+  const attemptedCount = questions.filter((q) => byTopic[q.id]?.attempted).length;
+
+  return (
+    <div className="mt-6 space-y-3">
+      <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-accent" />
+          <h3 className="text-[15px] font-semibold text-text-primary">
+            Try it yourself
+          </h3>
+        </div>
+        <div className="text-[11.5px] text-text-muted">
+          {solvedCount} solved · {attemptedCount}/{questions.length} attempted
+        </div>
+      </div>
+      <p className="text-[12.5px] text-text-muted -mt-1">
+        Write and run each query in its own editor. Progress is saved as you go.
+      </p>
+      {questions.map((q, i) => (
+        <TryItCard
+          key={q.id}
+          question={q}
+          index={i}
+          status={byTopic[q.id]}
+          onAttempt={onAttempt}
+        />
+      ))}
     </div>
   );
 }
@@ -3045,6 +3463,7 @@ function QuizPanel({
           <span className="px-2 py-0.5 rounded bg-bg-base border border-border font-mono">
             Question {safeQ + 1} / {totalQ}
           </span>
+          {q.difficulty && <DifficultyPill level={q.difficulty} />}
         </div>
         <div className="text-[15px] leading-relaxed mb-2">{q.q}</div>
         {!showAnswer && (

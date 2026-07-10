@@ -5,13 +5,14 @@
 //   userProgress/{username}/sections/profile
 //   userProgress/{username}/sections/progress
 //   userProgress/{username}/sections/quiz
+//   userProgress/{username}/sections/tryit
 //   userProgress/{username}/sections/ui
 //   userProgress/{username}/sections/kanban
 //
-// GET  → assemble all four into a single response
+// GET  → assemble all sections into a single response
 // PUT  → write ONE section only (per-section debouncing on the client).
-//        For `quiz` we accept a flat patch of dotted paths so concurrent
-//        answers merge without overwrite races.
+//        For `quiz` and `tryit` we accept a flat patch of dotted paths so
+//        concurrent answers/attempts merge without overwrite races.
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -21,8 +22,15 @@ import { FieldValue } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 
-const SECTIONS = ["profile", "progress", "quiz", "ui", "kanban"] as const;
+const SECTIONS = ["profile", "progress", "quiz", "tryit", "ui", "kanban"] as const;
 type SectionKey = (typeof SECTIONS)[number];
+
+// Sections whose PUT body is a dotted-path merge (keyed by a root map field)
+// so individual entries don't clobber siblings under concurrent writes.
+const DOTTED_SECTIONS: Partial<Record<SectionKey, string>> = {
+  quiz: "answers",
+  tryit: "attempts",
+};
 
 function sectionRef(username: string, section: SectionKey) {
   return db
@@ -66,29 +74,34 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
- * For the `quiz` section we accept either:
+ * For dotted sections (`quiz`, `tryit`) we accept either:
  *   - a flat map of dotted paths: { "answers.iam-roles.5": {selected:"B", correct:true} }
- *   - OR a nested object under `answers` which we flatten to dotted paths
+ *   - OR a nested object under the root key which we flatten to dotted paths
  *
- * Both end up as a single Firestore `update` so individual answers merge cleanly.
+ * `root` is the top-level map field ("answers" for quiz, "attempts" for tryit).
+ * Both forms end up as a single Firestore `update` so individual entries merge
+ * cleanly without clobbering siblings.
  */
-function buildQuizDottedPatch(
+function buildDottedPatch(
+  root: string,
   patch: Record<string, unknown>
 ): Record<string, unknown> {
-  // Already-dotted path case
-  const looksDotted = Object.keys(patch).every((k) => k.startsWith("answers."));
+  const prefix = `${root}.`;
+  const looksDotted =
+    Object.keys(patch).length > 0 &&
+    Object.keys(patch).every((k) => k.startsWith(prefix));
   if (looksDotted) return patch;
 
-  const nested = patch.answers;
+  const nested = patch[root];
   if (!isPlainObject(nested)) {
     // empty / malformed — just bump updatedAt
     return {};
   }
   const out: Record<string, unknown> = {};
-  for (const [topicId, byIdx] of Object.entries(nested)) {
-    if (!isPlainObject(byIdx)) continue;
-    for (const [qIdx, val] of Object.entries(byIdx)) {
-      out[`answers.${topicId}.${qIdx}`] = val;
+  for (const [outerId, inner] of Object.entries(nested)) {
+    if (!isPlainObject(inner)) continue;
+    for (const [innerId, val] of Object.entries(inner)) {
+      out[`${root}.${outerId}.${innerId}`] = val;
     }
   }
   return out;
@@ -124,14 +137,15 @@ export async function PUT(req: NextRequest) {
 
   const ref = sectionRef(user.username, section as SectionKey);
 
-  if (section === "quiz") {
-    // Dotted-path update so individual answers don't clobber siblings.
-    const dotted = buildQuizDottedPatch(patch);
+  const dottedRoot = DOTTED_SECTIONS[section as SectionKey];
+  if (dottedRoot) {
+    // Dotted-path update so individual entries don't clobber siblings.
+    const dotted = buildDottedPatch(dottedRoot, patch);
     // Always bump updatedAt; create the doc if it doesn't exist yet.
     const snap = await ref.get();
     if (!snap.exists) {
       await ref.set({
-        answers: {},
+        [dottedRoot]: {},
         updatedAt: FieldValue.serverTimestamp(),
       });
     }
