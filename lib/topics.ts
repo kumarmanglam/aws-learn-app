@@ -18,6 +18,7 @@ export type {
   QuickReference,
   Domain,
   Topic,
+  TryItQuestion,
   SectionInfo,
   CourseInfo,
 } from "./topics/shared";

@@ -5,10 +5,12 @@
 // orders) — never foo/bar — and every query is framed by "what does this
 // number mean for the business."
 //
-// Code tabs follow the 4-block pattern: Setup / Concept / Variation / Try-it.
-// Each query tab shares the topic's schema via the CodeExample `setup` field
-// (see lib/topics/shared.ts) so the CREATE/INSERT DDL isn't repeated in every
-// tab's visible code. Queries run in-browser via sql.js (SQLite). SQLite is
+// Worked-example code tabs: Setup / Concept / Variation. Each query tab shares
+// the topic's schema via the CodeExample `setup` field (see lib/topics/shared.ts)
+// so the CREATE/INSERT DDL isn't repeated in every tab's visible code. Hands-on
+// practice lives in each topic's `tryIt` array (5 exercises, easy→medium) which
+// render as their own editable, individually-run SQL editors with result-based
+// correctness tracking. Queries run in-browser via sql.js (SQLite). SQLite is
 // ~95% MySQL-compatible; the few divergences get inline "MySQL note" callouts
 // and a dedicated cheat-sheet topic.
 // ============================================================
@@ -175,21 +177,12 @@ SELECT * FROM customers;`,
 SELECT name, city, credit
 FROM customers;`,
       },
-      {
-        language: "sql",
-        tab: "4 · Try it",
-        title: "Your turn",
-        setup: CUSTOMERS_SEED,
-        code: `-- TASK: show just each customer's name and their segment
--- (the report your sales lead asked for). Fill in the columns, then Run.
-SELECT /* columns here */ *
-FROM customers;`,
-      },
     ],
     problemStatement:
       "Your manager keeps the customer list in a shared spreadsheet that five people edit at once. It has started showing blank rows, a phone number typed into the 'credit limit' column, and duplicate entries. Explain, in database terms, what a table would enforce that the spreadsheet does not — and identify which column should be the primary key.",
     questions: [
       {
+        difficulty: "easy",
         q: "In database terms, what is a single row of the customers table?",
         options: [
           "One complete record — e.g. everything about one customer",
@@ -202,6 +195,33 @@ FROM customers;`,
           "A row is one record: one customer, with a value in every column. A column (like 'city') runs down the table across all rows.",
       },
       {
+        difficulty: "easy",
+        q: "A 'column' in the customers table is best described as:",
+        options: [
+          "One customer's full details",
+          "A single field (like city) with a fixed name and type, shared by every row",
+          "The primary key only",
+          "A chart of the data",
+        ],
+        answer: "B",
+        explanation:
+          "A column is one typed field that every row fills in — e.g. every customer has a city. A row, by contrast, is one whole record.",
+      },
+      {
+        difficulty: "easy",
+        q: "Reading the result of `SELECT name, city FROM customers;`, what will a report reader see?",
+        options: [
+          "Every column of every customer",
+          "Only the name and city of each customer",
+          "A single number",
+          "An error, because you must always use SELECT *",
+        ],
+        answer: "B",
+        explanation:
+          "SELECT lists exactly the columns you want. Choosing specific columns keeps reports focused on what the audience needs.",
+      },
+      {
+        difficulty: "medium",
         q: "What is the main advantage of a database table over a spreadsheet sheet for company data?",
         options: [
           "It uses brighter colors",
@@ -214,28 +234,65 @@ FROM customers;`,
           "The enforced, typed structure (plus multi-user scale and repeatable queries) is why databases are trusted with large, shared business data.",
       },
       {
-        q: "What does the primary key (the id column) guarantee?",
+        difficulty: "medium",
+        q: "What does the primary key (the id column) guarantee, and why does it matter for related tables?",
         options: [
           "That the table is sorted alphabetically",
           "That every value is a number",
-          "That each row can be uniquely identified — 'customer 5' means exactly one row",
+          "That each row is uniquely identifiable — so an orders table can reliably point to exactly one customer",
           "That the column is hidden from reports",
         ],
         answer: "C",
         explanation:
-          "A primary key uniquely identifies each row, which also lets other tables reliably reference it.",
+          "A primary key uniquely identifies each row. Other tables (like orders) reference it, so 'customer 5' always resolves to one customer.",
+      },
+    ],
+    tryIt: [
+      {
+        id: "sql-what-is-db-t1",
+        difficulty: "easy",
+        prompt: "Return **every column** for all customers.",
+        hint: "`*` is shorthand for 'all columns'.",
+        setup: CUSTOMERS_SEED,
+        starter: `-- Fill in the blank and Run\nSELECT ___ FROM customers;`,
+        solution: `SELECT * FROM customers;`,
       },
       {
-        q: "Reading the result of `SELECT name, city FROM customers;`, what will a report reader see?",
-        options: [
-          "Every column of every customer",
-          "Only the name and city of each customer",
-          "A single number",
-          "An error, because you must always use SELECT *",
-        ],
-        answer: "B",
-        explanation:
-          "SELECT lists exactly the columns you want. Choosing specific columns keeps reports focused on what the audience needs.",
+        id: "sql-what-is-db-t2",
+        difficulty: "easy",
+        prompt: "Show only each customer's **name and city**.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT /* columns */ \nFROM customers;`,
+        solution: `SELECT name, city FROM customers;`,
+      },
+      {
+        id: "sql-what-is-db-t3",
+        difficulty: "easy",
+        prompt: "Show each customer's **name, segment and credit**.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT \nFROM customers;`,
+        solution: `SELECT name, segment, credit FROM customers;`,
+      },
+      {
+        id: "sql-what-is-db-t4",
+        difficulty: "medium",
+        prompt:
+          "Show each customer's **name and credit**, but label the credit column **credit_limit**.",
+        hint: "Use `AS` to rename a column in the output.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT name, credit /* AS ... */ \nFROM customers;`,
+        solution: `SELECT name, credit AS credit_limit FROM customers;`,
+      },
+      {
+        id: "sql-what-is-db-t5",
+        difficulty: "medium",
+        prompt:
+          "List each customer's **name and credit**, ordered from the **highest credit to the lowest**.",
+        hint: "Sorting uses `ORDER BY column DESC` (you'll meet it properly next topic).",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT name, credit\nFROM customers\n/* ORDER BY ... */;`,
+        solution: `SELECT name, credit FROM customers ORDER BY credit DESC;`,
+        orderMatters: true,
       },
     ],
   },
@@ -347,22 +404,20 @@ SELECT name, credit AS credit_limit
 FROM customers
 ORDER BY credit DESC;`,
       },
-      {
-        language: "sql",
-        tab: "4 · Try it",
-        title: "Your turn",
-        setup: CUSTOMERS_SEED,
-        code: `-- TASK: list customer name and city, sorted A→Z by name.
--- Hint: ORDER BY name (ascending is the default — no DESC needed).
-SELECT name, city
-FROM customers
-/* add your ORDER BY here */;`,
-      },
     ],
     problemStatement:
       "The credit committee wants a one-page list of customers ranked from the highest approved credit limit to the lowest, with the limit column clearly labelled 'Credit Limit'. Write the single query that produces exactly that, and explain why ORDER BY … DESC (not ASC) is the right choice for this report.",
     questions: [
       {
+        difficulty: "easy",
+        q: "Every SQL query starts with which two keywords?",
+        options: ["GROUP BY … HAVING", "SELECT … FROM", "ORDER BY … LIMIT", "WHERE … JOIN"],
+        answer: "B",
+        explanation:
+          "SELECT names the columns you want; FROM names the table. Every other clause is optional and added after.",
+      },
+      {
+        difficulty: "easy",
         q: "What does `AS` do in `SELECT credit AS credit_limit`?",
         options: [
           "Permanently renames the column in the database",
@@ -375,6 +430,7 @@ FROM customers
           "AS creates an alias for the result set only — the stored column name is unchanged. It's for readable reports.",
       },
       {
+        difficulty: "easy",
         q: "Which clause puts the largest value at the top of the result?",
         options: ["ORDER BY col ASC", "ORDER BY col DESC", "GROUP BY col", "SELECT TOP col"],
         answer: "B",
@@ -382,6 +438,7 @@ FROM customers
           "ORDER BY sorts ascending by default; DESC reverses it so the biggest value comes first.",
       },
       {
+        difficulty: "medium",
         q: "SQL is described as 'declarative'. What does that mean for you as an analyst?",
         options: [
           "You must write step-by-step loops over each row",
@@ -394,6 +451,7 @@ FROM customers
           "Declarative means you state the 'what', not the 'how'. You never loop over rows yourself.",
       },
       {
+        difficulty: "medium",
         q: "Reading `SELECT name, credit FROM customers ORDER BY credit DESC` as a sentence, what is it asking for?",
         options: [
           "Each customer's name and credit limit, highest limit first",
@@ -404,6 +462,59 @@ FROM customers
         answer: "A",
         explanation:
           "Read the clauses in order: which columns (name, credit), from where (customers), sorted how (credit, descending).",
+      },
+    ],
+    tryIt: [
+      {
+        id: "sql-first-select-t1",
+        difficulty: "easy",
+        prompt: "Show **all customer names**, sorted **alphabetically (A→Z)**.",
+        hint: "Ascending is the default, so `ORDER BY name` is enough.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT name\nFROM customers\n/* ORDER BY ... */;`,
+        solution: `SELECT name FROM customers ORDER BY name;`,
+        orderMatters: true,
+      },
+      {
+        id: "sql-first-select-t2",
+        difficulty: "easy",
+        prompt:
+          "Show each customer's **name and credit**, labelling the credit column **credit_limit**.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT name, credit /* AS ... */\nFROM customers;`,
+        solution: `SELECT name, credit AS credit_limit FROM customers;`,
+      },
+      {
+        id: "sql-first-select-t3",
+        difficulty: "easy",
+        prompt:
+          "Show each customer's **name and credit**, sorted from the **smallest credit to the largest**.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT name, credit\nFROM customers\nORDER BY /* ... */;`,
+        solution: `SELECT name, credit FROM customers ORDER BY credit;`,
+        orderMatters: true,
+      },
+      {
+        id: "sql-first-select-t4",
+        difficulty: "medium",
+        prompt:
+          "Show **name and credit** (label credit as **credit_limit**), with the **largest credit first**.",
+        hint: "Combine an alias with `ORDER BY credit DESC`.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT name, credit AS credit_limit\nFROM customers\n/* ORDER BY ... */;`,
+        solution: `SELECT name, credit AS credit_limit FROM customers ORDER BY credit DESC;`,
+        orderMatters: true,
+      },
+      {
+        id: "sql-first-select-t5",
+        difficulty: "medium",
+        prompt:
+          "Show **only the customer names**, but ordered by their **credit from highest to lowest**.",
+        hint: "You can ORDER BY a column you didn't SELECT.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT name\nFROM customers\nORDER BY /* ... */;`,
+        solution: `SELECT name FROM customers ORDER BY credit DESC;`,
+        orderMatters: true,
       },
     ],
   },
@@ -517,21 +628,12 @@ SELECT name, credit, credit * 0.10 AS starter_limit
 FROM customers
 ORDER BY credit DESC;`,
       },
-      {
-        language: "sql",
-        tab: "4 · Try it",
-        title: "Your turn",
-        setup: CUSTOMERS_SEED,
-        code: `-- TASK: build a label like "Acme Corp — Enterprise" using || .
--- Then, as a comment, write how you'd do the same in MySQL with CONCAT.
-SELECT /* name || ' — ' || segment */ *
-FROM customers;`,
-      },
     ],
     problemStatement:
       "A teammate wrote a report in this course using `name || ' ' || city` and it worked, but when they pasted it into MySQL Workbench at the office it errored. Explain what happened and rewrite the expression so it runs in MySQL, then name one other syntax difference they should watch for.",
     questions: [
       {
+        difficulty: "easy",
         q: "What database engine actually runs your queries when you click Run in this course?",
         options: [
           "MySQL on a remote server",
@@ -544,6 +646,7 @@ FROM customers;`,
           "It's SQLite via WASM, fully client-side — no server, no signup, and your data never leaves the browser.",
       },
       {
+        difficulty: "easy",
         q: "How do you concatenate two text columns in MySQL (as opposed to SQLite)?",
         options: [
           "col1 || col2",
@@ -556,6 +659,20 @@ FROM customers;`,
           "MySQL uses CONCAT(). SQLite (and PostgreSQL) use the || operator. This is the most common gotcha when moving queries.",
       },
       {
+        difficulty: "easy",
+        q: "Which of these does an analyst use identically across SQLite and MySQL?",
+        options: [
+          "String concatenation syntax",
+          "The current-time function",
+          "SELECT, JOIN, GROUP BY, HAVING, window functions and CTEs",
+          "Auto-increment keyword",
+        ],
+        answer: "C",
+        explanation:
+          "The core analytical toolkit is shared standard SQL. Only a few idioms (concat, now, auto-increment) differ.",
+      },
+      {
+        difficulty: "medium",
         q: "You select a non-aggregated column that isn't in GROUP BY. What's the safe habit for both engines?",
         options: [
           "Rely on SQLite's leniency and hope MySQL matches",
@@ -568,16 +685,69 @@ FROM customers;`,
           "MySQL's default is strict and will reject it; SQLite is lenient. Listing grouped columns explicitly works everywhere.",
       },
       {
-        q: "Which of these does an analyst use identically across SQLite and MySQL?",
+        difficulty: "medium",
+        q: "You need the current timestamp in a query you'll run on MySQL at work. Which is correct there?",
         options: [
-          "String concatenation syntax",
-          "The current-time function",
-          "SELECT, JOIN, GROUP BY, HAVING, window functions and CTEs",
-          "Auto-increment keyword",
+          "datetime('now')",
+          "NOW()",
+          "TODAY",
+          "CURRENT",
         ],
-        answer: "C",
+        answer: "B",
         explanation:
-          "The core analytical toolkit is shared standard SQL. Only a few idioms (concat, now, auto-increment) differ.",
+          "MySQL uses NOW(); SQLite uses datetime('now'). Dates diverge the most between engines — there's a whole section on them later.",
+      },
+    ],
+    tryIt: [
+      {
+        id: "sql-mysql-note-t1",
+        difficulty: "easy",
+        prompt:
+          "Build one column that joins each customer's **name and city** as exactly `Acme Corp - Mumbai` (space-dash-space). Use the SQLite `||` operator.",
+        hint: "`name || ' - ' || city`",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT name /* || ... */ AS label\nFROM customers;`,
+        solution: `SELECT name || ' - ' || city AS label FROM customers;`,
+      },
+      {
+        id: "sql-mysql-note-t2",
+        difficulty: "easy",
+        prompt:
+          "Show each customer's **name** and a column that is **10% of their credit** (`credit * 0.10`).",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT name, /* credit * ... */ AS ten_pct\nFROM customers;`,
+        solution: `SELECT name, credit * 0.10 AS ten_pct FROM customers;`,
+      },
+      {
+        id: "sql-mysql-note-t3",
+        difficulty: "easy",
+        prompt:
+          "Combine each customer's **name and segment** as exactly `Acme Corp (Enterprise)` using `||`.",
+        hint: "You'll need three `||` joins and the literal '(' and ')'.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT /* name || ... */ AS label\nFROM customers;`,
+        solution: `SELECT name || ' (' || segment || ')' AS label FROM customers;`,
+      },
+      {
+        id: "sql-mysql-note-t4",
+        difficulty: "medium",
+        prompt:
+          "Show **name** and each customer's credit **increased by 5%** (`credit * 1.05`), with the **largest** increased value first.",
+        hint: "You can ORDER BY the same expression you selected.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT name, credit * 1.05 AS new_credit\nFROM customers\n/* ORDER BY ... */;`,
+        solution: `SELECT name, credit * 1.05 AS new_credit FROM customers ORDER BY credit * 1.05 DESC;`,
+        orderMatters: true,
+      },
+      {
+        id: "sql-mysql-note-t5",
+        difficulty: "medium",
+        prompt:
+          "Build a single label joining **name, segment and city** as exactly `Acme Corp — Enterprise — Mumbai` (using ` — ` as the separator).",
+        hint: "Four values joined by ' — ' between each.",
+        setup: CUSTOMERS_SEED,
+        starter: `SELECT /* name || ' — ' || ... */ AS label\nFROM customers;`,
+        solution: `SELECT name || ' — ' || segment || ' — ' || city AS label FROM customers;`,
       },
     ],
   },
@@ -699,41 +869,12 @@ WHERE o.status = 'paid'
 GROUP BY c.city
 ORDER BY revenue DESC;`,
       },
-      {
-        language: "sql",
-        tab: "4 · Try it",
-        title: "Your turn",
-        setup: ORDERS_SEED,
-        code: `-- TASK: like a COUNTIF PivotTable — count how many orders
--- each status has. Group by status, COUNT the rows.
-SELECT status /* , COUNT(*) AS num_orders */
-FROM orders
-/* GROUP BY ... */;`,
-      },
     ],
     problemStatement:
       "Your team currently rebuilds a 'revenue by city' PivotTable in a fresh Excel file every month, and last month someone dragged a formula one row short and understated a region. Show the single SQL query that replaces this PivotTable, and explain two concrete reasons the query is safer than the monthly spreadsheet.",
     questions: [
       {
-        q: "An Excel VLOOKUP that pulls a value from another sheet is most like which SQL operation?",
-        options: ["WHERE", "JOIN", "ORDER BY", "DISTINCT"],
-        answer: "B",
-        explanation:
-          "A JOIN links two tables on a shared key and lets you use columns from both — exactly what VLOOKUP/XLOOKUP does across sheets.",
-      },
-      {
-        q: "You want 'total revenue per city'. Which SQL pairing matches a PivotTable's rows + values?",
-        options: [
-          "WHERE + ORDER BY",
-          "GROUP BY city + SUM(amount)",
-          "DISTINCT city",
-          "JOIN only",
-        ],
-        answer: "B",
-        explanation:
-          "The Pivot Rows field becomes GROUP BY; the Values field becomes an aggregate like SUM(). Together they total per group.",
-      },
-      {
+        difficulty: "easy",
         q: "The Excel AutoFilter 'show only paid orders' translates to:",
         options: [
           "GROUP BY status",
@@ -746,6 +887,41 @@ FROM orders
           "WHERE keeps only the rows meeting a condition — the same job as an AutoFilter.",
       },
       {
+        difficulty: "easy",
+        q: "An Excel VLOOKUP that pulls a value from another sheet is most like which SQL operation?",
+        options: ["WHERE", "JOIN", "ORDER BY", "DISTINCT"],
+        answer: "B",
+        explanation:
+          "A JOIN links two tables on a shared key and lets you use columns from both — exactly what VLOOKUP/XLOOKUP does across sheets.",
+      },
+      {
+        difficulty: "easy",
+        q: "You want 'total revenue per city'. Which SQL pairing matches a PivotTable's rows + values?",
+        options: [
+          "WHERE + ORDER BY",
+          "GROUP BY city + SUM(amount)",
+          "DISTINCT city",
+          "JOIN only",
+        ],
+        answer: "B",
+        explanation:
+          "The Pivot Rows field becomes GROUP BY; the Values field becomes an aggregate like SUM(). Together they total per group.",
+      },
+      {
+        difficulty: "medium",
+        q: "A COUNTIF that counts orders per status maps most directly to:",
+        options: [
+          "SELECT COUNT(*) FROM orders",
+          "GROUP BY status with COUNT(*)",
+          "WHERE status = 'paid'",
+          "ORDER BY status",
+        ],
+        answer: "B",
+        explanation:
+          "COUNTIF-by-category is GROUP BY the category + COUNT(*). One output row per distinct status, with its count.",
+      },
+      {
+        difficulty: "medium",
         q: "Which is a genuine business advantage of the SQL report over the monthly PivotTable?",
         options: [
           "It uses more colors",
@@ -756,6 +932,59 @@ FROM orders
         answer: "B",
         explanation:
           "Repeatability, scale, multi-user access, and self-documentation are why analytics teams move recurring reports to SQL.",
+      },
+    ],
+    tryIt: [
+      {
+        id: "sql-vs-excel-t1",
+        difficulty: "easy",
+        prompt:
+          "AutoFilter → WHERE: show **all columns** of only the orders whose **status is 'paid'**.",
+        hint: "Text values go in single quotes: `status = 'paid'`.",
+        setup: ORDERS_SEED,
+        starter: `SELECT *\nFROM orders\n/* WHERE ... */;`,
+        solution: `SELECT * FROM orders WHERE status = 'paid';`,
+      },
+      {
+        id: "sql-vs-excel-t2",
+        difficulty: "easy",
+        prompt:
+          "Show **all columns** of orders with an **amount greater than 5000**.",
+        setup: ORDERS_SEED,
+        starter: `SELECT *\nFROM orders\nWHERE /* ... */;`,
+        solution: `SELECT * FROM orders WHERE amount > 5000;`,
+      },
+      {
+        id: "sql-vs-excel-t3",
+        difficulty: "easy",
+        prompt:
+          "COUNTIF → GROUP BY: count **how many orders** exist for **each status**. Show the status and a `num_orders` count.",
+        hint: "GROUP BY status, then COUNT(*).",
+        setup: ORDERS_SEED,
+        starter: `SELECT status, /* COUNT(*) AS num_orders */\nFROM orders\n/* GROUP BY ... */;`,
+        solution: `SELECT status, COUNT(*) AS num_orders FROM orders GROUP BY status;`,
+      },
+      {
+        id: "sql-vs-excel-t4",
+        difficulty: "medium",
+        prompt:
+          "PivotTable → JOIN + GROUP BY: total **revenue per city** for **paid** orders only, **largest first**. (Join orders to customers, sum the amount per city.)",
+        hint: "JOIN customers ON c.id = o.customer_id, filter WHERE o.status='paid', GROUP BY c.city.",
+        setup: ORDERS_SEED,
+        starter: `SELECT c.city, SUM(o.amount) AS revenue\nFROM orders o\nJOIN customers c ON c.id = o.customer_id\n/* WHERE ... GROUP BY ... ORDER BY ... */;`,
+        solution: `SELECT c.city, SUM(o.amount) AS revenue FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.status = 'paid' GROUP BY c.city ORDER BY revenue DESC;`,
+        orderMatters: true,
+      },
+      {
+        id: "sql-vs-excel-t5",
+        difficulty: "medium",
+        prompt:
+          "For **each customer name**, show their **total order amount** across all statuses, **highest total first**.",
+        hint: "JOIN, GROUP BY c.name, SUM(o.amount), ORDER BY the total DESC.",
+        setup: ORDERS_SEED,
+        starter: `SELECT c.name, SUM(o.amount) AS total\nFROM orders o\nJOIN customers c ON c.id = o.customer_id\n/* GROUP BY ... ORDER BY ... */;`,
+        solution: `SELECT c.name, SUM(o.amount) AS total FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.name ORDER BY total DESC;`,
+        orderMatters: true,
       },
     ],
   },
