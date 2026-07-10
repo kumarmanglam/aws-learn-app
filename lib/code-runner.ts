@@ -14,6 +14,8 @@ export type RunResult = {
   result?: string;
   /** fatal error (exception, timeout, or runtime-load failure) */
   error?: string;
+  /** tabular result set (SQL queries) — rendered as an HTML table by the UI */
+  table?: { columns: string[]; rows: (string | number | null)[][] };
 };
 
 // ------------------------------------------------------------
@@ -221,6 +223,149 @@ export async function runPython(code: string): Promise<RunResult> {
     try {
       pyodide.setStdout({ batched: () => {} });
       pyodide.setStderr({ batched: () => {} });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+// ------------------------------------------------------------
+// SQL — sql.js (SQLite compiled to WASM), lazily loaded from CDN on first use.
+//
+// Real MySQL cannot run client-side (it's a client-server C++ engine with no
+// browser WASM build), so the in-browser engine is SQLite via sql.js — ~95%
+// syntax-compatible with MySQL for analyst-level SQL (SELECT/JOIN/GROUP BY/
+// HAVING/window functions/CTEs). Each run uses a FRESH in-memory database so
+// results are reproducible: the optional `setup` DDL is re-applied every time,
+// meaning a query block always sees a known schema regardless of run order.
+// ------------------------------------------------------------
+const SQLJS_VERSION = "1.12.0";
+const SQLJS_CDN = `https://cdn.jsdelivr.net/npm/sql.js@${SQLJS_VERSION}/dist`;
+
+type SqlValue = string | number | Uint8Array | null;
+type SqlExecResult = { columns: string[]; values: SqlValue[][] };
+type SqlDatabase = {
+  run: (sql: string) => void;
+  exec: (sql: string) => SqlExecResult[];
+  close: () => void;
+};
+type SqlJsStatic = { Database: new () => SqlDatabase };
+
+// Module-level cache: sql.js initializes once per session and is reused by
+// every subsequent SQL run.
+let sqlJsPromise: Promise<SqlJsStatic> | null = null;
+
+/** True once sql.js has begun (or finished) loading — used to decide whether
+ *  to show the one-time "Setting up SQL runtime…" modal. */
+export function isSqlReady(): boolean {
+  return sqlJsPromise !== null;
+}
+
+function injectSqlJsScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const w = window as unknown as { initSqlJs?: unknown };
+    if (w.initSqlJs) return resolve();
+
+    const existing = document.querySelector<HTMLScriptElement>(
+      "script[data-sqljs]"
+    );
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () =>
+        reject(new Error("Failed to load sql.js from CDN"))
+      );
+      return;
+    }
+
+    const s = document.createElement("script");
+    s.src = `${SQLJS_CDN}/sql-wasm.js`;
+    s.async = true;
+    s.setAttribute("data-sqljs", "true");
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Failed to load sql.js from CDN"));
+    document.head.appendChild(s);
+  });
+}
+
+function ensureSqlJs(): Promise<SqlJsStatic> {
+  if (sqlJsPromise) return sqlJsPromise;
+  sqlJsPromise = (async () => {
+    await injectSqlJsScript();
+    const initSqlJs = (
+      window as unknown as {
+        initSqlJs: (cfg: {
+          locateFile: (file: string) => string;
+        }) => Promise<SqlJsStatic>;
+      }
+    ).initSqlJs;
+    return initSqlJs({ locateFile: (file) => `${SQLJS_CDN}/${file}` });
+  })();
+  // On failure, clear the cache so the next Run can retry the load.
+  sqlJsPromise.catch(() => {
+    sqlJsPromise = null;
+  });
+  return sqlJsPromise;
+}
+
+/** Render a sql.js value for display: Uint8Array (BLOB) → placeholder, else pass through. */
+function normalizeSqlValue(v: SqlValue): string | number | null {
+  if (v === null) return null;
+  if (typeof v === "number" || typeof v === "string") return v;
+  return "[blob]";
+}
+
+/**
+ * Run SQL in a fresh in-browser SQLite database. `setup` (if given) is executed
+ * first — typically CREATE TABLE + INSERT — then `code` runs against it. The
+ * LAST statement that returns rows becomes the result `table`; statements that
+ * return no rows (DDL/INSERT/UPDATE) report a friendly stdout line instead.
+ */
+export async function runSql(code: string, setup?: string): Promise<RunResult> {
+  let SQL: SqlJsStatic;
+  try {
+    SQL = await ensureSqlJs();
+  } catch (err) {
+    return {
+      stdout: "",
+      stderr: "",
+      error:
+        err instanceof Error ? err.message : "Failed to load the SQL runtime.",
+    };
+  }
+
+  let db: SqlDatabase | null = null;
+  try {
+    db = new SQL.Database();
+    if (setup && setup.trim()) db.run(setup);
+
+    const results = db.exec(code);
+    // Prefer the last result set that actually has columns/rows.
+    const last = [...results].reverse().find((r) => r.columns.length > 0);
+
+    if (!last) {
+      return {
+        stdout: "OK — statement executed (no rows returned).",
+        stderr: "",
+      };
+    }
+
+    return {
+      stdout: "",
+      stderr: "",
+      table: {
+        columns: last.columns,
+        rows: last.values.map((row) => row.map(normalizeSqlValue)),
+      },
+    };
+  } catch (err) {
+    return {
+      stdout: "",
+      stderr: "",
+      error: err instanceof Error ? err.message || String(err) : String(err),
+    };
+  } finally {
+    try {
+      db?.close();
     } catch {
       /* ignore */
     }

@@ -1,0 +1,259 @@
+================================================================
+FUTURE IMPROVEMENTS — aws-learn-app
+Goal: use this app both as a study tool AND a portfolio project to land a
+role at a big MNC product-based company, and grow into a practical,
+knowledgeable engineer. Written 2026-07-08.
+================================================================
+
+HOW TO READ THIS FILE
+----------------------
+Two axes, both matter:
+  (A) STUDY/CONTENT — makes the app better at teaching you & your 2 friends.
+  (B) ENGINEERING CRAFT — building these makes the codebase itself an
+      interview-worthy project (tests, CI, auth, perf, architecture).
+Pick 1-2 P0 items at a time. Don't parallelize everything.
+
+================================================================
+P0 — DO FIRST (highest leverage)
+================================================================
+
+1. [B] Add automated tests (Vitest + React Testing Library)
+   Why: Zero tests today. "Show me a test you wrote" is a near-guaranteed
+   interview question at product MNCs; having real coverage in a real repo
+   is a concrete talking point.
+   Plan:
+   - npm i -D vitest @testing-library/react @testing-library/jest-dom jsdom
+   - Start with lib/progress-metrics.ts (pure functions: topicScore,
+     spacedRepetition, buildHeatmap, computeStreak) — easiest, highest value.
+   - Then lib/code-runner.ts (mock Worker/Pyodide, assert RunResult shape).
+   - Then one component test (QuizPanel scoring, ManualCheckbox toggle).
+   - Add `npm run test` script; keep it fast (<10s).
+
+2. [B] CI pipeline (GitHub Actions)
+   Why: Every MNC engineering team runs CI. "Do you have CI set up" is a
+   basic filter question; this is a half-day win.
+   Plan:
+   - .github/workflows/ci.yml: on push/PR -> npm ci, npx tsc --noEmit,
+     npm run build, npm test.
+   - Add a status badge to a README.
+   - Optional: Vercel preview deploys per PR (you already deploy there).
+
+3. [B] Fix auth — real password hashing + move users out of code
+   Why: app/api/auth/login/route.ts currently stores 3 users with PLAINTEXT
+   passwords hardcoded in source, even though bcryptjs + lib/passwords.ts
+   (hashPassword/verifyPassword) already exist unused. This is a real
+   security bug and a bad look if anyone reviews the repo.
+   Plan:
+   - Move the USERS map into Firestore (users/{username}: displayName,
+     passwordHash, createdAt) — collection already exists per context.txt.
+   - Use verifyPassword() from lib/passwords.ts in the login route.
+   - One-time script to hash+seed the 3 existing users (scripts/ dir exists).
+   - Bonus: rate-limit login attempts (simple in-memory or Firestore counter).
+
+4. [A+B] DSA practice module using the EXISTING in-browser runner
+   Why: This is the single highest-ROI addition for MNC interviews. Every
+   product-company loop (Google/Amazon/MS/Atlassian/Flipkart/etc.) leads
+   with DSA. You already built a sandboxed JS Web Worker + lazy Pyodide
+   Python runner (lib/code-runner.ts) for the Code tab — reuse it directly
+   for a LeetCode-style problem set with test cases.
+   Plan:
+   - New content type in lib/topics/shared.ts: CodingProblem { id, title,
+     difficulty, prompt, starterCode{js,python}, testCases[], solution,
+     hints[] }.
+   - New course "DSA" with sections: Arrays/Strings, Hashmaps, Two Pointers,
+     Sliding Window, Linked Lists, Trees/Graphs (BFS/DFS), Heaps, DP.
+   - New /dsa/[problemId] page: editor (reuse Playground's editor UI) + a
+     "Run Tests" button that runs user code against testCases[] using
+     runJavaScript/runPython and shows pass/fail per case.
+   - Start with 10-15 problems (classics: two-sum, valid-parens, reverse
+     linked-list, BFS-level-order, LRU cache) — quality over quantity first.
+
+5. [A] Finish "AI Agents" section (already spec'd in TODO.txt, P1 there)
+   Why: It's half-done, low effort, and AI/agentic engineering is now a
+   real interview topic at product companies building AI features.
+   Plan: exactly as TODO.txt [P1] describes — create
+   lib/topics/ai-agents.ts (8 topics), wire into lib/topics.ts (3 spots:
+   import, sections[], courses[] sectionIds), matching the existing
+   Topic schema.
+
+6. [A+B] Mock exam mode (timed, scored, review screen)
+   Why: Testing effect (retrieval practice) is the single best-evidenced
+   learning technique — stronger than re-reading. Also mirrors the real
+   SAA-C03 exam format (65 questions, 130 min), which is directly useful
+   if you're also cert-prepping.
+   Plan:
+   - New /exam page: pick a course, pull N random questions across its
+     topics (reuse the existing Question[] per topic), countdown timer,
+     no "reveal answer" until the end.
+   - Reuse topicScore/globalScore-style aggregation from
+     lib/progress-metrics.ts; store exam attempts as a new "exams" section
+     doc (Firestore: userProgress/{username}/sections/exams -> attempts[]).
+   - End screen: per-question review (already have this UI pattern in
+     QuizPanel's showSummary block — extract & reuse it).
+
+7. [B] Refactor app/page.tsx (2900 lines, one client component)
+   Why: A single giant component is a textbook code-smell interviewers
+   probe for ("how would you refactor this?"). Doing it for real, and being
+   able to talk through the before/after, is a strong story.
+   Plan (incremental, not a rewrite):
+   - Extract already-separable pieces first: LeftSidebar, RightSidebar,
+     QuizPanel, CodePanel, BeginnerPanel, TopNav, CourseBottomDrawer into
+     their own files under components/ or app/_components/.
+   - Extract state logic into hooks: useProgressSync (the useSectionSync +
+     debounced PUTs), useTopicNavigation (topic-switch effects/timer).
+   - Do this ONE component at a time, verify with tsc + a manual smoke test
+     after each extraction — don't do it all in one PR.
+
+8. [A+B] Behavioral / STAR-story bank + interview-prep tracker
+   Why: Product-company loops always include a behavioral round scored
+   against leadership-principle-style rubrics (Amazon LPs, Google
+   Googleyness, etc.). Most candidates under-prepare this relative to DSA.
+   Plan:
+   - Reuse the Kanban board's data model almost as-is: a "Stories" board
+     with columns Draft -> Polished -> Practiced, cards = STAR stories
+     (Situation/Task/Action/Result fields instead of description).
+   - Could literally be a 5th column type on the existing /kanban page, or
+     a lightweight sibling page reusing dnd-kit + the Card/EditCardModal
+     components you already wrote.
+
+================================================================
+P1 — DO NEXT (strong multipliers)
+================================================================
+
+9. [A] True spaced-repetition upgrade (SM-2 / FSRS-lite)
+   Current spacedRepetition() in lib/progress-metrics.ts buckets by fixed
+   intervals (1/3/7/14/21 days) based on last score. Upgrade to a real
+   SM-2-style scheduler: track an "ease factor" per topic that adjusts on
+   each review outcome, not just current-quiz-accuracy. More durable
+   long-term retention with the same UI (dashboard "Due for review").
+
+10. [A] Flashcard / active-recall mode
+    Add a lightweight flip-card mode per topic (question on front, answer
+    on back) generated from existing keyFacts/quickReference/questions data
+    — no new content authoring needed, just a new rendering mode + a
+    "known/unknown" self-rating that feeds into the spaced-repetition data.
+
+11. [A] Interleaved / mixed practice sessions
+    A "Mixed Quiz" mode that pulls questions across topics/domains within
+    a course (or across courses) instead of one topic at a time —
+    interleaving is well-evidenced to improve transfer and discrimination
+    between similar concepts (e.g. RDS vs Aurora vs DynamoDB).
+
+12. [B] Observability basics
+    Add a React ErrorBoundary around the main panels (a code-tab crash or
+    bad topic data currently could blank the page); wire up basic
+    web-vitals reporting; consider Sentry free tier. Small effort, and
+    "how do you monitor production issues" is a common systems-thinking
+    interview question.
+
+13. [B] Performance pass
+    All topic content currently ships in the client bundle (lib/topics.ts
+    aggregates everything). Investigate code-splitting by course (dynamic
+    import per course module) and run a bundle analyzer
+    (@next/bundle-analyzer) — concrete before/after numbers are excellent
+    interview material ("I reduced first-load JS by X%").
+
+14. [A] Low-level design (LLD) course
+    New course: classic LLD interview problems (LRU cache, rate limiter,
+    parking lot, elevator system, tic-tac-toe) — each topic = problem
+    statement + a written OOP design (classes/interfaces) + your SVG
+    diagram capability for the class diagram + code example implementing
+    it + MCQs on the design trade-offs. Complements the DSA course.
+
+15. [A] SQL & database internals content
+    New section/course: joins, indexes & query plans (EXPLAIN), normal
+    forms, transactions & isolation levels, N+1 queries — a near-universal
+    product-company screening topic that the current System Design course
+    only touches at a high level (CAP, sharding).
+
+16. [A/B] "Explain it back" / teaching mode
+    A free-text box under each topic prompting "explain this in your own
+    words" (Feynman technique) — no grading needed, just self-reflection;
+    stored locally or as a lightweight new Firestore field. Cheap to build,
+    strong learning-science backing.
+
+17. [B] Zod validation on API routes
+    /api/progress currently trusts patch shapes loosely (isPlainObject
+    checks). Adding zod schemas for each section's PUT payload is a small,
+    concrete "I hardened an API" story and guards against bad client state
+    corrupting Firestore docs.
+
+18. [A] Global search / command palette (Cmd-K)
+    Jump to any topic/section/course by fuzzy search from anywhere, not
+    just the left-sidebar search scoped to the active course. Good UX
+    polish, moderate effort (a simple client-side fuzzy match over the
+    existing topics[] array is enough — no library needed).
+
+================================================================
+P2 — LATER (nice to have, lower urgency)
+================================================================
+
+19. [A] Weekly digest / study-streak reminder (email or just an in-app
+    "since you last visited" banner) for you + your 2 friends.
+20. [A] Friend leaderboard on the dashboard (XP/streak comparison across
+    the 3 hardcoded users) — social accountability for a small group.
+21. [B] E2E tests with Playwright (login -> pick topic -> answer quiz ->
+    check dashboard updates) once unit/component tests exist.
+22. [B] Light theme (currently dark-only; CSS variables already exist in
+    globals.css, so this is mostly a token-swap exercise).
+23. [A] "Mistake notebook" — auto-collect every wrong MCQ answer across
+    all topics into one reviewable list (derivable from existing quiz
+    state; no new storage needed, just a new dashboard section).
+24. [A] Content QA pass on the 65 agent-authored topics (per TODO.txt
+    [P2]) — especially the fresh-authored Networking & System Design
+    courses; spot-check factual accuracy.
+25. [B] PWA/offline support so quizzes work without network.
+26. [A] Company-specific prep tracks (e.g. "Amazon LP prep", "System
+    design for Google SRE") layered on top of existing content via tags.
+
+================================================================
+30 / 60 / 90-DAY PLAN (assume ~8-10 focused hrs/week)
+================================================================
+
+DAYS 1-30 — Foundations + highest-leverage interview prep
+- Week 1-2: Items 1-2 (tests + CI). Small, mechanical, gets the safety net
+  in place before you refactor anything.
+- Week 2-3: Item 3 (real auth) — also a good excuse to practice Firestore
+  security rules review.
+- Week 3-4: Start Item 4 (DSA module) — even just the content schema +
+  5 problems + the Run Tests page working end-to-end. This is your biggest
+  interview-prep unlock; don't gold-plate it, ship the thinnest useful
+  version first.
+- Ongoing: use the app daily as a learner too — quiz yourself on 1 AWS/
+  Networking/System-Design topic a day using the existing dashboard's
+  "Due for review" list.
+
+DAYS 31-60 — Depth + engineering story
+- Item 7 (incremental page.tsx refactor) — do it in small, reviewable
+  chunks; write a short note each time on why (this becomes your "tell me
+  about a refactor you did" story).
+- Item 6 (mock exam mode) — directly useful for SAA-C03 if you're also
+  cert-prepping, and a nice feature to demo.
+- Grow the DSA module to 25-30 problems across the core patterns; start
+  timing yourself.
+- Item 5 (finish AI Agents content) — quick win, keep it warm.
+
+DAYS 61-90 — Interview-specific polish
+- Item 8 (STAR story bank) — write and refine 6-8 stories covering
+  conflict, failure, leadership, ambiguity, technical depth.
+- Item 14 (LLD course) — pick 4-5 classic LLD problems and actually design
+  + code them; this doubles as interview practice AND content.
+- Item 9/10/11 (spaced-repetition upgrade, flashcards, interleaving) if
+  time allows — otherwise defer to P1 backlog.
+- Start doing timed mock interviews (DSA + LLD + behavioral) using what
+  you built, ideally with your 2 friends taking turns interviewing you.
+
+ONGOING (no fixed timeline)
+- Keep a running "what I learned building this" doc — this becomes your
+  resume bullet points and interview talking points.
+- Every 2-4 weeks, do a content QA pass (Item 24) on whatever course you
+  used most recently.
+- Revisit this file and re-prioritize — it's a living plan, not a contract.
+
+================================================================
+GUIDING PRINCIPLE
+================================================================
+Don't just add features — for each P0/P1 item you build, be able to answer
+"what did this teach me, and what would I do differently." That answer is
+worth more in an interview than the feature itself. The app is the vehicle;
+the engineering judgment you build while extending it is the actual goal.
