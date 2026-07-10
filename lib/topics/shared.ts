@@ -22,6 +22,13 @@ export type CodeExample = {
   code: string;
   /** optional tab label when multiple examples appear together */
   tab?: string;
+  /**
+   * SQL-only: schema/seed DDL (CREATE TABLE + INSERT) run in a fresh in-memory
+   * database immediately before `code`. Lets several query tabs in one topic
+   * share the same tables without repeating the DDL inside every tab's visible
+   * `code`. Ignored by non-SQL runtimes.
+   */
+  setup?: string;
 };
 
 /** A structured Beginner-tab subtopic — heading + bullet list */

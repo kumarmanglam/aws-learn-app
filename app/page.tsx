@@ -18,6 +18,7 @@ import {
 import {
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   CheckCircle2,
   Circle,
   Trophy,
@@ -47,6 +48,7 @@ import {
   Layout,
   Server,
   Boxes,
+  Database,
   Brain,
   Menu,
   Loader2,
@@ -71,7 +73,9 @@ import {
 import {
   runJavaScript,
   runPython,
+  runSql,
   isPyodideReady,
+  isSqlReady,
   type RunResult,
 } from "@/lib/code-runner";
 import {
@@ -99,6 +103,7 @@ const COURSE_ICONS: Record<string, LucideIcon> = {
   Sparkles,
   Network,
   Boxes,
+  Database,
 };
 
 // ============================================================
@@ -1062,6 +1067,11 @@ export default function Page() {
   const [draggedTab, setDraggedTab] = useState<TabKey | null>(null);
   const [dropTargetTab, setDropTargetTab] = useState<TabKey | null>(null);
 
+  // Panel stacking order (front-most first). Separate from `tabOrder` so that
+  // clicking a tab reshuffles only its content panel to the top — the tab bar
+  // itself stays put (it only reorders via drag-and-drop).
+  const [panelOrder, setPanelOrder] = useState<TabKey[]>(DEFAULT_TAB_ORDER);
+
   // signed-in user (from /api/auth/me); null until /api/progress resolves
   const [user, setUser] = useState<SessionUser | null>(null);
 
@@ -1287,6 +1297,30 @@ export default function Page() {
     [courseSections]
   );
 
+  // Flat, ordered list of lesson (topic) ids across the active course, used to
+  // drive the Previous / Next lesson buttons at the bottom of the panels.
+  const courseTopicOrder = useMemo(
+    () => courseSections.flatMap((s) => s.topicIds),
+    [courseSections]
+  );
+  const currentTopicIdx = courseTopicOrder.indexOf(state.selectedTopicId);
+  const prevTopicId =
+    currentTopicIdx > 0 ? courseTopicOrder[currentTopicIdx - 1] : undefined;
+  const nextTopicId =
+    currentTopicIdx >= 0 && currentTopicIdx < courseTopicOrder.length - 1
+      ? courseTopicOrder[currentTopicIdx + 1]
+      : undefined;
+  // Jump to a lesson and make sure its section is expanded in the left rail.
+  const goToTopic = (id: string) =>
+    setState((s) => {
+      const sec = sections.find((x) => x.topicIds.includes(id));
+      return {
+        ...s,
+        selectedTopicId: id,
+        expanded: sec ? { ...s.expanded, [sec.id]: true } : s.expanded,
+      };
+    });
+
   const radarData = useMemo(
     () => domainStrengths(state.quiz, courseTopicIds),
     [state.quiz, courseTopicIds]
@@ -1342,23 +1376,24 @@ export default function Page() {
   const expandAll = () =>
     setState((s) => ({ ...s, collapsedPanels: [] }));
 
-  // The "current" tab = first open panel in the window order (front-most).
-  const currentTab: TabKey | undefined = state.tabOrder.find((k) =>
+  // The "current" tab = front-most open panel (first in the panel order).
+  const currentTab: TabKey | undefined = panelOrder.find((k) =>
     state.openTabs.includes(k)
   );
   const closeAll = () => setState((s) => ({ ...s, openTabs: [] }));
   const closeOthers = () =>
     setState((s) => {
-      const keep = s.tabOrder.find((k) => s.openTabs.includes(k));
+      const keep = panelOrder.find((k) => s.openTabs.includes(k));
       return { ...s, openTabs: keep ? [keep] : [] };
     });
 
-  // Clicking a tab brings its panel to the FRONT of the window (top), opens it
-  // if closed, expands it if collapsed, then scrolls the panels into view under
-  // the sticky bar. Reordering is animated via the FLIP hooks below.
-  const focusTab = (k: TabKey) =>
+  // Clicking a tab brings its content panel to the FRONT of the panels area
+  // (top), opens it if closed, expands it if collapsed, then scrolls the panels
+  // into view under the sticky bar. Only the panel order changes — the tab bar
+  // stays put (it reorders only via drag-and-drop).
+  const focusTab = (k: TabKey) => {
+    setPanelOrder((p) => [k, ...p.filter((t) => t !== k)]);
     setState((s) => {
-      const tabOrder = [k, ...s.tabOrder.filter((t) => t !== k)];
       const openTabs = s.openTabs.includes(k) ? s.openTabs : [...s.openTabs, k];
       const collapsedPanels = s.collapsedPanels.filter((t) => t !== k);
       // Scroll the panels area to the top (just below the sticky tab bar).
@@ -1366,8 +1401,9 @@ export default function Page() {
         const top = navRef.current?.offsetHeight ?? 0;
         contentRef.current?.scrollTo({ top, behavior: "smooth" });
       });
-      return { ...s, tabOrder, openTabs, collapsedPanels };
+      return { ...s, openTabs, collapsedPanels };
     });
+  };
 
   // -------- drag-to-reorder tab bar --------
   const handleDragStart = (k: TabKey) => () => setDraggedTab(k);
@@ -1669,14 +1705,14 @@ export default function Page() {
               </div>
             </div>
 
-            {/* Open panels in tabOrder */}
+            {/* Open panels in panel-stacking order (front-most first) */}
             {state.openTabs.length === 0 && (
               <div className="rounded-lg border border-border bg-bg-card/40 p-8 text-center text-text-muted">
                 All tabs closed. Click <strong className="text-accent">Open all</strong> in the tab bar above to bring panels back.
               </div>
             )}
 
-            {state.tabOrder
+            {panelOrder
               .filter((k) => state.openTabs.includes(k))
               .map((k) => {
                 const meta = TABS[k];
@@ -1775,6 +1811,52 @@ export default function Page() {
                   </div>
                 );
               })}
+
+            {/* Previous / Next lesson navigation */}
+            <div className="flex items-stretch justify-between gap-3 pt-2">
+              <button
+                type="button"
+                disabled={!prevTopicId}
+                onClick={() => prevTopicId && goToTopic(prevTopicId)}
+                className="group flex-1 flex items-center gap-2.5 rounded-lg border border-border bg-bg-card/50 px-4 py-3 text-left hover:bg-bg-hover hover:border-accent/40 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-bg-card/50 disabled:hover:border-border transition-colors"
+              >
+                <ChevronLeft
+                  size={18}
+                  className="shrink-0 text-text-muted group-hover:text-accent group-disabled:text-text-muted"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[10.5px] uppercase tracking-wide text-text-muted">
+                    Previous
+                  </span>
+                  <span className="block text-[13px] font-medium text-text-primary truncate">
+                    {prevTopicId
+                      ? topics.find((t) => t.id === prevTopicId)?.title ?? "—"
+                      : "Start of course"}
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={!nextTopicId}
+                onClick={() => nextTopicId && goToTopic(nextTopicId)}
+                className="group flex-1 flex items-center justify-end gap-2.5 rounded-lg border border-border bg-bg-card/50 px-4 py-3 text-right hover:bg-bg-hover hover:border-accent/40 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-bg-card/50 disabled:hover:border-border transition-colors"
+              >
+                <span className="min-w-0">
+                  <span className="block text-[10.5px] uppercase tracking-wide text-text-muted">
+                    Next
+                  </span>
+                  <span className="block text-[13px] font-medium text-text-primary truncate">
+                    {nextTopicId
+                      ? topics.find((t) => t.id === nextTopicId)?.title ?? "—"
+                      : "End of course"}
+                  </span>
+                </span>
+                <ChevronRight
+                  size={18}
+                  className="shrink-0 text-text-muted group-hover:text-accent group-disabled:text-text-muted"
+                />
+              </button>
+            </div>
 
             <div className="text-[11.5px] text-text-muted px-1 pb-4">
               Tip: click a tab to bring its panel to the top · drag to reorder ·
@@ -2414,25 +2496,91 @@ function ArchitecturePanel({ topic }: { topic: Topic }) {
   );
 }
 
-// Only JavaScript and Python run in-browser (Web Worker / Pyodide).
-function runnableLang(language: string): "javascript" | "python" | null {
+// JavaScript (Web Worker), Python (Pyodide) and SQL (sql.js / SQLite) run
+// in-browser. Everything else is display-only (no Run button).
+function runnableLang(
+  language: string
+): "javascript" | "python" | "sql" | null {
   const l = language.toLowerCase();
   if (l === "javascript" || l === "js" || l === "node" || l === "nodejs")
     return "javascript";
   if (l === "python" || l === "py" || l === "python3") return "python";
+  if (l === "sql" || l === "sqlite" || l === "mysql") return "sql";
   return null;
+}
+
+function ResultTable({
+  table,
+}: {
+  table: NonNullable<RunResult["table"]>;
+}) {
+  return (
+    <div className="overflow-auto rounded border border-border">
+      <table className="w-full border-collapse text-[12px]">
+        <thead>
+          <tr className="bg-bg-base/60">
+            {table.columns.map((c, i) => (
+              <th
+                key={i}
+                className="text-left font-semibold text-accent px-2.5 py-1.5 border-b border-border whitespace-nowrap"
+              >
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.length === 0 && (
+            <tr>
+              <td
+                colSpan={table.columns.length}
+                className="px-2.5 py-2 text-text-muted italic"
+              >
+                (0 rows)
+              </td>
+            </tr>
+          )}
+          {table.rows.map((row, r) => (
+            <tr key={r} className="odd:bg-white/[0.02]">
+              {row.map((cell, c) => (
+                <td
+                  key={c}
+                  className="px-2.5 py-1.5 border-b border-border/50 text-text-primary whitespace-nowrap"
+                >
+                  {cell === null ? (
+                    <span className="text-text-muted italic">NULL</span>
+                  ) : (
+                    String(cell)
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function RunOutput({ output }: { output: RunResult }) {
   const empty =
-    !output.stdout && !output.stderr && !output.error && output.result == null;
+    !output.stdout &&
+    !output.stderr &&
+    !output.error &&
+    output.result == null &&
+    !output.table;
   return (
     <div className="rounded-md border border-border bg-[#0d1117] overflow-hidden animate-fade-in">
       <div className="px-3 py-1.5 border-b border-border bg-bg-base/40 text-[11px] uppercase tracking-wide text-text-muted">
-        Output
+        {output.table
+          ? `Result · ${output.table.rows.length} row${
+              output.table.rows.length === 1 ? "" : "s"
+            }`
+          : "Output"}
       </div>
       <div className="p-3 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap max-h-72 overflow-auto">
         {empty && <span className="text-text-muted italic">(no output)</span>}
+        {output.table && <ResultTable table={output.table} />}
         {output.stdout && <div className="text-text-primary">{output.stdout}</div>}
         {output.stderr && <div className="text-yellow-400">{output.stderr}</div>}
         {output.result != null && (
@@ -2465,6 +2613,7 @@ function CodePanel({
 
   const [running, setRunning] = useState(false);
   const [pyLoading, setPyLoading] = useState(false);
+  const [sqlLoading, setSqlLoading] = useState(false);
   const [output, setOutput] = useState<RunResult | null>(null);
 
   // Clear stale output whenever the shown example changes (tab or topic switch).
@@ -2479,6 +2628,15 @@ function CodePanel({
     try {
       if (runLang === "javascript") {
         setOutput(await runJavaScript(ex.code));
+      } else if (runLang === "sql") {
+        // Show the modal loader only for sql.js's one-time cold start.
+        const cold = !isSqlReady();
+        if (cold) setSqlLoading(true);
+        try {
+          setOutput(await runSql(ex.code, ex.setup));
+        } finally {
+          if (cold) setSqlLoading(false);
+        }
       } else {
         // Show the modal loader only for Pyodide's one-time cold start.
         const cold = !isPyodideReady();
@@ -2498,7 +2656,7 @@ function CodePanel({
     } finally {
       setRunning(false);
     }
-  }, [runLang, ex.code]);
+  }, [runLang, ex.code, ex.setup]);
 
   return (
     <div className="space-y-2">
@@ -2536,7 +2694,12 @@ function CodePanel({
               </>
             ) : (
               <>
-                <Play size={14} /> Run {runLang === "python" ? "Python" : "JavaScript"}
+                <Play size={14} /> Run{" "}
+                {runLang === "python"
+                  ? "Python"
+                  : runLang === "sql"
+                    ? "SQL"
+                    : "JavaScript"}
               </>
             )}
           </button>
@@ -2551,7 +2714,11 @@ function CodePanel({
           )}
           <span className="text-[11px] text-text-muted">
             Runs in your browser ·{" "}
-            {runLang === "python" ? "Pyodide (WASM)" : "sandboxed Web Worker"}
+            {runLang === "python"
+              ? "Pyodide (WASM)"
+              : runLang === "sql"
+                ? "SQLite (sql.js / WASM)"
+                : "sandboxed Web Worker"}
           </span>
         </div>
       )}
@@ -2559,6 +2726,7 @@ function CodePanel({
       {output && <RunOutput output={output} />}
 
       {pyLoading && <CenterLoader label="Setting up Python runtime…" />}
+      {sqlLoading && <CenterLoader label="Setting up SQL runtime…" />}
     </div>
   );
 }
