@@ -1,3 +1,96 @@
+// ============================================================================
+// MCQ AUTHORING STANDARD — READ BEFORE WRITING OR EDITING ANY QUESTION
+// Applies to every `questions: [...]` MCQ in this course-content file. It exists
+// because our first question bank became guessable by PATTERN instead of
+// understanding; the goal is to fix that WITHOUT creating a new pattern.
+// (See also the top of context.txt.)
+// ============================================================================
+//
+// WHAT WENT WRONG (measured across the whole bank):
+//   • ORDER TELL  — the correct answer was "B" in ~76% of questions (A/C rare,
+//     D almost never). Always-pick-B scored high without reading the question.
+//   • LENGTH TELL — the correct answer was the LONGEST option in ~77%: the
+//     answer was over-explained while distractors were short. Always-pick-the-
+//     longest was a second free pass.
+//   CRITICAL: the fix must NOT simply mirror these — making the answer always
+//   the SHORTEST, or always "C", is the SAME bug in disguise. The correct
+//   answer must be genuinely RANDOM in both position and length.
+//
+// -- 1. KILL THE POSITION & LENGTH TELLS -------------------------------------
+//   1a. Randomise the correct LETTER — spread A/B/C/D ~evenly per topic; no
+//       default letter. Adding several at once? rotate deliberately (e.g.
+//       C, A, D, B, A, …) and check the spread.
+//   1b. Decorrelate LENGTH — the correct answer must be neither reliably the
+//       longest NOR the shortest. Keep all four options in a similar length
+//       band so length reveals nothing; let the answer's length-rank vary
+//       randomly across questions.
+//   1c. NEVER TRIM the correct answer just to shrink it (that drops meaning or
+//       misleads). If it reads short, add ACCURATE detail; if a distractor is
+//       bloated, tighten the distractor. Adjust the wrong options, never the
+//       right one's substance.
+//   1d. Pin "All/None of the above" to the LAST slot — and don't let it be the
+//       correct answer more than ~1-in-N times, or that slot becomes the tell.
+//   1e. Vary the order of REUSED option sets — if several questions reuse the
+//       same services/concepts, shuffle their order between questions.
+//
+// -- 2. WRITE SMART, HONEST DISTRACTORS --------------------------------------
+//   2a. Same TYPE as the answer — all real services / all valid-looking configs
+//       / all the same kind of thing. No joke, impossible, or unrelated options.
+//   2b. Represent real MISCONCEPTIONS — the mistakes actual learners make, not
+//       trivial filler.
+//   2c. Exactly ONE defensible answer — an expert can eliminate the other three
+//       on facts alone. No near-ties where two options are both arguably right.
+//   2d. Two options MAY be deliberately close so the reader must know the
+//       precise distinction — that is discrimination, NOT trickery (see 4b).
+//
+// -- 3. REMOVE HIDDEN CLUES --------------------------------------------------
+//   3a. No KEYWORD ECHO — the answer must not reuse a distinctive word/phrase
+//       from the stem that the distractors lack. Stem⇄answer vocab overlap is
+//       as strong a tell as length.
+//   3b. GRAMMAR must fit the stem for EVERY option (a/an, singular/plural,
+//       tense). A grammatically-off distractor gives itself away.
+//   3c. ABSOLUTE qualifiers (always/never/only/all/must) must not cluster in the
+//       wrong options while the answer stays hedged (can/may/typically). Use
+//       absolutes only when factually required, and balance them across options.
+//
+// -- 4. QUESTION DESIGN ------------------------------------------------------
+//   4a. Test UNDERSTANDING, not keyword recall — prefer scenarios, configs, and
+//       trade-offs that ask WHY over "define X".
+//   4b. Difficulty comes from CONCEPTS / reasoning, not confusing wording or
+//       extra reading. No trick questions, obscure exceptions, or technicalities.
+//   4c. Prefer POSITIVE wording. If a "NOT / EXCEPT" stem is genuinely needed,
+//       CAPITALISE the negation so it isn't skimmed as a positive stem.
+//   4d. Consistent option STYLE within a question (all service names, or all
+//       one-line configs, …) — don't mix a service, a feature, and a sentence.
+//   4e. Don't make the SAME service/concept the correct answer repeatedly within
+//       a topic; spread coverage across the syllabus.
+//   4f. Match the stated difficulty:
+//         easy   = basic recall / direct understanding
+//         medium = apply knowledge or compare services
+//         hard   = reasoning, architecture choices, subtle distinctions
+//
+// -- 5. EXPLANATIONS ---------------------------------------------------------
+//   5a. TEACH: say why the answer is right, why the others are wrong (briefly),
+//       and the underlying concept — useful even to someone who answered wrong.
+//   5b. Reference option CONTENT, never letters ("B is correct…"), so option
+//       order can change later without breaking the text.
+//   5c. VARY the wording — don't begin every explanation the same way.
+//   5d. Verify against SOURCE (AWS docs / official exam guide). A pattern-proof
+//       question with a subtly wrong answer just teaches misinformation.
+//
+// -- 6. CHECK BEFORE COMMIT (script it — this is a data file) ----------------
+//   Compute and review, per topic AND whole file:
+//     [ ] correct-letter distribution ~even across A/B/C/D (no "B" pile-up)
+//     [ ] correct-answer length-rank spread (not always longest OR shortest)
+//     [ ] flag any option sharing 3+ words verbatim with its stem (keyword echo)
+//   Manual pass:
+//     [ ] exactly one unambiguously correct answer
+//     [ ] distractors are plausible, same-type, and real misconceptions
+//     [ ] no grammar / absolute-word / keyword clues; negations are capitalised
+//     [ ] explanations teach the concept and name no option letters
+//     [ ] the question stays fair even if the option order is shuffled
+// ============================================================================
+
 // ============================================================
 // SECTION: LLM Integration — Calling the Claude API, Streaming
 // & Async, Tool Use / Function Calling, Prompt Caching & Token

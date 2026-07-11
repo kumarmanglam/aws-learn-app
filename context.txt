@@ -1,4 +1,25 @@
 ================================================================
+ CLAUDE INSTRUCTIONS — MCQ AUTHORING (READ FIRST)
+================================================================
+When writing or editing ANY multiple-choice question (Question.options +
+Question.answer, in lib/topics/**), RANDOMIZE the correct option. The current
+content has a predictable pattern that lets a learner guess without reading:
+
+  1. The correct answer is TOO OFTEN "B". Spread correct answers evenly across
+     A / B / C / D. Across any set of questions in a topic, no single letter
+     should dominate (roughly 25% each; never make B the default).
+  2. The correct answer is TOO OFTEN the LONGEST option. Do NOT make the right
+     choice the most detailed / longest one. Vary option length so the correct
+     answer is sometimes the shortest, sometimes mid-length. Make the DISTRACTORS
+     plausible and sometimes longer than the correct answer.
+  3. No positional or length tell should exist. The only way to get it right
+     must be understanding the question — not pattern-matching the shape.
+
+Apply this to existing questions too when you touch them, and to the /solve
+practice questions. When adding several questions at once, deliberately shuffle
+which letter is correct (e.g. C, A, D, B, A, …) and check the distribution.
+
+================================================================
  PROJECT CONTEXT — aws-learn-app
 ================================================================
 
@@ -27,6 +48,9 @@ TECH STACK
 - Firebase Firestore (+ firebase-admin) for per-user progress
 - Auth: JWT in an httpOnly cookie (jose), passwords hashed with bcryptjs
 - recharts (dashboard radar chart), lucide-react (icons)
+- Code editing/highlighting: react-simple-code-editor + prismjs (theme scoped
+  under `.code-hl` in globals.css; helper in lib/prism.ts) — editable examples,
+  drills, and the /solve editor get real Java/JS/Python/SQL syntax colors.
 - Live code execution:
     JavaScript -> sandboxed Web Worker (in-browser)
     Python     -> Pyodide / WASM (lazy-loaded from CDN)
@@ -93,7 +117,9 @@ The 6 tabs per topic (keys in TabKey):
   overview     -> TL;DR + subtopics + quick reference
   explanation  -> long-form prose
   diagram      -> inline SVG + legend  (DSA: interactive React diagram via
-                  components/dsa-diagrams, keyed by Topic.diagramComponent)
+                  components/dsa-diagrams, keyed by Topic.diagramComponent).
+                  Every DSA diagram is wrapped in DiagramViewport (pan/drag,
+                  zoom in/out, Reset, and a full-screen portal modal w/ close).
   analogy      -> real-world analogy
   code         -> EDITABLE + RUNNABLE code. Learners can tweak any example
                   (a "modified" badge shows when it differs from the original)
@@ -105,11 +131,21 @@ The 6 tabs per topic (keys in TabKey):
                   per DSA problem, auto-checked against expected output.
 Tabs are reorderable/openable/collapsible; that layout state is persisted.
 
-Standalone pages:
+Standalone pages (opened from the top-nav icons; playground & solve open in a
+new tab):
   /playground     -> free coding sandbox (JavaScript / Python / SQL / Java),
                      localStorage-persisted per language
   /dsa-practice   -> timed multiple-choice OA simulator over the DSA question
                      bank; attempts saved to progress (dsa-attempts shard)
+  /solve          -> LeetCode-style split workspace (app/solve/page.tsx).
+                     LEFT half = the question (prompt, examples, constraints);
+                     RIGHT half = tabs [Attempt | Solution]. Attempt is a
+                     runnable multi-language editor (coding questions) or a
+                     saved scratchpad (design questions); Solution shows every
+                     tier brute -> intermediate -> optimal + variants.
+                     Questions are self-contained in lib/practice-questions.ts
+                     (MVP: Subsets (DSA, coding) + URL Shortener (System Design,
+                     design)); NOT yet sourced from the course `topics`.
 
 Everything the sidebar/search/dashboard/radar shows is SCOPED to the
 currently selected course (derived from courses[] -> its sectionIds).
@@ -167,15 +203,25 @@ A tiny Node/Express service that compiles + runs Java, deployed FREE on Render
 (Docker image = Node 20 + JDK 21, runs as non-root). The browser never calls it
 directly — only the /api/run-java proxy does.
   POST /run     -> { code } -> writes Main.java to a per-request temp dir,
-                   runs `javac` (8s timeout) then `java -Xmx128m Main` (5s
+                   runs `javac` (32s timeout) then `java -Xmx128m Main` (24s
                    timeout), caps stdout/stderr, deletes the dir. Public class
                    MUST be named Main.
-  GET  /health  -> { ok:true, uptime } (used by the wake button + Render checks)
+  GET  /health  -> { ok, uptime, warmState } — also kicks a background JVM
+                   warm-up. Used by the wake button + Render checks + pingers.
 Guardrails: hard timeouts (kills infinite loops), output caps, bounded heap,
 per-request temp dir, optional shared-secret header, per-IP rate limit.
+JVM warm-up: on startup AND on every /health hit, the server compiles+runs a
+trivial Main in the background so the first real /run isn't a cold compile — so
+clicking "Wake Java backend" (which pings /health) warms the compiler too.
+Timeout budget: the proxy sets `maxDuration = 60` (Vercel Hobby hard ceiling)
+and aborts at 58s; the backend's 32s+24s fit under that. Big/slow programs that
+need more than ~55s of 0.1-CPU time can't run on the free tier.
+Wake button (components/java-wake-button.tsx): after a successful hit it shows
+"Java ready" and DISABLES for ~14 min (just under the 15-min idle spin-down),
+then re-enables so the user can re-warm.
 Free-tier note: spins down after ~15 min idle -> ~30-60s cold start on the next
-hit; the "Wake Java backend" button and "Waking Java runtime..." loader cover
-this. Ephemeral filesystem is fine (temp files are meant to vanish).
+hit; the wake button + "Waking Java runtime..." loader cover this. Ephemeral
+filesystem is fine (temp files are meant to vanish).
 
 
 COURSES & CONTENT COVERED (so far)

@@ -1,3 +1,96 @@
+// ============================================================================
+// MCQ AUTHORING STANDARD — READ BEFORE WRITING OR EDITING ANY QUESTION
+// Applies to every `questions: [...]` MCQ in this course-content file. It exists
+// because our first question bank became guessable by PATTERN instead of
+// understanding; the goal is to fix that WITHOUT creating a new pattern.
+// (See also the top of context.txt.)
+// ============================================================================
+//
+// WHAT WENT WRONG (measured across the whole bank):
+//   • ORDER TELL  — the correct answer was "B" in ~76% of questions (A/C rare,
+//     D almost never). Always-pick-B scored high without reading the question.
+//   • LENGTH TELL — the correct answer was the LONGEST option in ~77%: the
+//     answer was over-explained while distractors were short. Always-pick-the-
+//     longest was a second free pass.
+//   CRITICAL: the fix must NOT simply mirror these — making the answer always
+//   the SHORTEST, or always "C", is the SAME bug in disguise. The correct
+//   answer must be genuinely RANDOM in both position and length.
+//
+// -- 1. KILL THE POSITION & LENGTH TELLS -------------------------------------
+//   1a. Randomise the correct LETTER — spread A/B/C/D ~evenly per topic; no
+//       default letter. Adding several at once? rotate deliberately (e.g.
+//       C, A, D, B, A, …) and check the spread.
+//   1b. Decorrelate LENGTH — the correct answer must be neither reliably the
+//       longest NOR the shortest. Keep all four options in a similar length
+//       band so length reveals nothing; let the answer's length-rank vary
+//       randomly across questions.
+//   1c. NEVER TRIM the correct answer just to shrink it (that drops meaning or
+//       misleads). If it reads short, add ACCURATE detail; if a distractor is
+//       bloated, tighten the distractor. Adjust the wrong options, never the
+//       right one's substance.
+//   1d. Pin "All/None of the above" to the LAST slot — and don't let it be the
+//       correct answer more than ~1-in-N times, or that slot becomes the tell.
+//   1e. Vary the order of REUSED option sets — if several questions reuse the
+//       same services/concepts, shuffle their order between questions.
+//
+// -- 2. WRITE SMART, HONEST DISTRACTORS --------------------------------------
+//   2a. Same TYPE as the answer — all real services / all valid-looking configs
+//       / all the same kind of thing. No joke, impossible, or unrelated options.
+//   2b. Represent real MISCONCEPTIONS — the mistakes actual learners make, not
+//       trivial filler.
+//   2c. Exactly ONE defensible answer — an expert can eliminate the other three
+//       on facts alone. No near-ties where two options are both arguably right.
+//   2d. Two options MAY be deliberately close so the reader must know the
+//       precise distinction — that is discrimination, NOT trickery (see 4b).
+//
+// -- 3. REMOVE HIDDEN CLUES --------------------------------------------------
+//   3a. No KEYWORD ECHO — the answer must not reuse a distinctive word/phrase
+//       from the stem that the distractors lack. Stem⇄answer vocab overlap is
+//       as strong a tell as length.
+//   3b. GRAMMAR must fit the stem for EVERY option (a/an, singular/plural,
+//       tense). A grammatically-off distractor gives itself away.
+//   3c. ABSOLUTE qualifiers (always/never/only/all/must) must not cluster in the
+//       wrong options while the answer stays hedged (can/may/typically). Use
+//       absolutes only when factually required, and balance them across options.
+//
+// -- 4. QUESTION DESIGN ------------------------------------------------------
+//   4a. Test UNDERSTANDING, not keyword recall — prefer scenarios, configs, and
+//       trade-offs that ask WHY over "define X".
+//   4b. Difficulty comes from CONCEPTS / reasoning, not confusing wording or
+//       extra reading. No trick questions, obscure exceptions, or technicalities.
+//   4c. Prefer POSITIVE wording. If a "NOT / EXCEPT" stem is genuinely needed,
+//       CAPITALISE the negation so it isn't skimmed as a positive stem.
+//   4d. Consistent option STYLE within a question (all service names, or all
+//       one-line configs, …) — don't mix a service, a feature, and a sentence.
+//   4e. Don't make the SAME service/concept the correct answer repeatedly within
+//       a topic; spread coverage across the syllabus.
+//   4f. Match the stated difficulty:
+//         easy   = basic recall / direct understanding
+//         medium = apply knowledge or compare services
+//         hard   = reasoning, architecture choices, subtle distinctions
+//
+// -- 5. EXPLANATIONS ---------------------------------------------------------
+//   5a. TEACH: say why the answer is right, why the others are wrong (briefly),
+//       and the underlying concept — useful even to someone who answered wrong.
+//   5b. Reference option CONTENT, never letters ("B is correct…"), so option
+//       order can change later without breaking the text.
+//   5c. VARY the wording — don't begin every explanation the same way.
+//   5d. Verify against SOURCE (AWS docs / official exam guide). A pattern-proof
+//       question with a subtly wrong answer just teaches misinformation.
+//
+// -- 6. CHECK BEFORE COMMIT (script it — this is a data file) ----------------
+//   Compute and review, per topic AND whole file:
+//     [ ] correct-letter distribution ~even across A/B/C/D (no "B" pile-up)
+//     [ ] correct-answer length-rank spread (not always longest OR shortest)
+//     [ ] flag any option sharing 3+ words verbatim with its stem (keyword echo)
+//   Manual pass:
+//     [ ] exactly one unambiguously correct answer
+//     [ ] distractors are plausible, same-type, and real misconceptions
+//     [ ] no grammar / absolute-word / keyword clues; negations are capitalised
+//     [ ] explanations teach the concept and name no option letters
+//     [ ] the question stays fair even if the option order is shuffled
+// ============================================================================
+
 // ============================================================
 // SECTION: Amazon S3
 // Buckets/objects, security & policies, versioning & replication,
@@ -107,58 +200,63 @@ aws s3 ls s3://my-unique-bucket-name/media/`,
     questions: [
       {
         q: "Which bucket name is VALID for Amazon S3?",
-        options: ["A. My_Backups", "B. mycompany-backups-2026", "C. 10.0.0.1", "D. Backups"],
-        answer: "B",
+        options: [
+          "A. My-Company-Backups-Archive-Store-2026",
+          "B. mycompany_backups_2026_archive_store",
+          "C. mycompany-backups-2026",
+          "D. 192.168.0.1",
+        ],
+        answer: "C",
         explanation:
-          "B is correct: lowercase, hyphen allowed, not an IP. A has uppercase and an underscore; C is IP-formatted; D has uppercase. Names must also be globally unique.",
+          "Valid S3 bucket names are lowercase, may contain hyphens, are 3–63 characters long, and must be globally unique — 'mycompany-backups-2026' meets all of these. Names with uppercase letters, names with underscores, and names formatted like an IP address are all rejected.",
       },
       {
         q: "What is an S3 object's 'key'?",
         options: [
-          "A. The KMS encryption key",
-          "B. The object's full path (prefix + object name)",
-          "C. The bucket's region",
-          "D. The access key ID",
+          "A. The object's full path within the bucket: its prefix plus the object name",
+          "B. The AWS KMS customer managed key that is used to encrypt the object's contents while at rest",
+          "C. The AWS Region and Availability Zone where the bucket was created",
+          "D. The IAM access key ID used to authenticate the upload request",
         ],
-        answer: "B",
+        answer: "A",
         explanation:
-          "B is correct: the key is the full path, composed of a prefix and the object name. It is not an encryption or access key, nor the region.",
+          "The key is the object's full path within the bucket — the prefix combined with the object name — and it uniquely identifies the object. It is not a KMS encryption key, the bucket's Region/AZ, or an IAM access key ID.",
       },
       {
         q: "A single PUT of a 6GB file fails. What is the correct approach?",
         options: [
-          "A. Split into two buckets",
-          "B. Use multi-part upload (required above 5GB)",
-          "C. Compress below 5MB first",
-          "D. Enable versioning",
+          "A. Split the file across two separate buckets and upload one half to each",
+          "B. Compress the file below 5MB locally before uploading it in a single request",
+          "C. Enable bucket versioning so the oversized upload is automatically retried in chunks",
+          "D. Use multi-part upload, which is required for objects larger than 5GB",
         ],
-        answer: "B",
+        answer: "D",
         explanation:
-          "B is correct: files larger than 5GB must use multi-part upload (max object size is 5TB). The others don't address the single-PUT size limit.",
+          "A single PUT request is capped at 5GB, so a 6GB object must use multi-part upload (which supports objects up to 5TB). Splitting across buckets, compressing below 5MB, or enabling versioning do not address the single-request size limit.",
       },
       {
         q: "How are 'folders' represented in Amazon S3?",
         options: [
-          "A. As real directory objects",
-          "B. They don't exist; slashes in object keys create the appearance of folders",
-          "C. As separate buckets",
-          "D. As tags",
+          "A. As real on-disk directory objects stored separately from the files they contain",
+          "B. They don't exist — slashes in object keys just create the appearance of folders",
+          "C. As separate S3 buckets, with one physical bucket created per folder in the path",
+          "D. As object tags that the console silently groups together into a folder tree view",
         ],
         answer: "B",
         explanation:
-          "B is correct: S3 has no true directories — keys just contain slashes, which the console renders as folders. Buckets and tags are different concepts.",
+          "S3 has no true directories. Keys are flat strings, and the '/' characters in a key are simply part of the name that the console renders as a folder hierarchy. They are not real directories, separate buckets, or tags.",
       },
       {
         q: "Which is TRUE about S3 buckets and regions?",
         options: [
-          "A. Bucket names are unique only within a region",
-          "B. Buckets are created in a region but names must be globally unique",
-          "C. Buckets are global with no region",
-          "D. Two accounts can share the same bucket name in different regions",
+          "A. A bucket is created in one Region, but its name must be globally unique",
+          "B. Bucket names only need to be unique within the Region that hosts the bucket",
+          "C. Buckets are global objects that do not belong to any particular AWS Region",
+          "D. Two different AWS accounts may reuse the same bucket name in separate Regions",
         ],
-        answer: "B",
+        answer: "A",
         explanation:
-          "B is correct: a bucket lives in a chosen region, but its name must be globally unique across all accounts/regions. A, C, and D contradict that.",
+          "A bucket physically lives in the Region chosen at creation, but bucket names occupy a single global namespace, so a name must be unique across every account and Region. Names are not merely Region-scoped, buckets are not Region-less, and two accounts cannot share the same name.",
       },
     ],
   },
@@ -255,62 +353,62 @@ aws s3 ls s3://my-unique-bucket-name/media/`,
       {
         q: "An EC2 instance needs to read from an S3 bucket. What is the recommended way to grant access?",
         options: [
-          "A. Hard-code IAM access keys in the app",
-          "B. Attach an IAM role to the EC2 instance",
-          "C. Make the bucket public",
-          "D. Use the root account credentials",
+          "A. Hard-code a long-lived IAM access key and secret directly in the application config",
+          "B. Make the bucket fully public so any instance on the internet can read its objects",
+          "C. Store the AWS account root user credentials on the instance and use those",
+          "D. Attach an IAM role to the EC2 instance so it receives temporary credentials",
         ],
-        answer: "B",
+        answer: "D",
         explanation:
-          "B is correct: attach an IAM role so the instance gets temporary credentials automatically. Hard-coding keys or using root is insecure; making the bucket public is unnecessary and risky.",
+          "Attach an IAM role to the instance so it receives temporary, automatically rotated credentials. Hard-coding access keys or using root credentials is insecure, and making the bucket public is unnecessary and risky.",
       },
       {
         q: "An IAM policy allows s3:GetObject, but a bucket policy has an explicit Deny for that user. What happens?",
         options: [
-          "A. Access is allowed (IAM wins)",
-          "B. Access is denied (explicit deny always wins)",
-          "C. It depends on which was created first",
-          "D. Access is allowed only over HTTPS",
+          "A. Access is allowed, because an IAM Allow takes precedence over a bucket policy",
+          "B. The outcome depends on whether the IAM policy or the bucket policy was created first",
+          "C. Access is denied, because an explicit Deny always overrides any Allow that applies",
+          "D. Access is allowed, but only when the request is made over an encrypted HTTPS connection",
         ],
-        answer: "B",
+        answer: "C",
         explanation:
-          "B is correct: an explicit Deny overrides any Allow. Access is granted only if (IAM or resource policy) allows AND there is no explicit deny.",
+          "An explicit Deny always wins: access is granted only when (an IAM policy OR the resource policy) allows the action AND no explicit Deny applies. Creation order and the transport protocol do not change this evaluation.",
       },
       {
         q: "To let another AWS account access your bucket, you use:",
         options: [
-          "A. A bucket policy with that account as the Principal",
-          "B. A security group",
-          "C. A NAT gateway",
-          "D. A VPC peering connection only",
+          "A. A security group rule that permits the other AWS account's entire IP address range",
+          "B. A bucket (resource) policy that names the other AWS account as the Principal",
+          "C. A NAT gateway placed between the two accounts to bridge their private networks",
+          "D. A VPC peering connection, which is the only supported cross-account access path",
         ],
-        answer: "A",
+        answer: "B",
         explanation:
-          "A is correct: cross-account S3 access is granted via a bucket (resource) policy naming the other account as Principal. Security groups/NAT/peering are network constructs, not S3 authorization.",
+          "Cross-account S3 access is granted with a bucket (resource) policy that names the other AWS account as the Principal. Security groups, NAT gateways, and VPC peering are network constructs and do not authorize S3 API access.",
       },
       {
         q: "What is the purpose of S3 'Block Public Access'?",
         options: [
-          "A. To encrypt objects",
-          "B. To prevent accidental public exposure of bucket data (anti-leak safety net)",
-          "C. To speed up uploads",
-          "D. To enable versioning",
+          "A. To transparently encrypt every object at rest using SSE-S3 or SSE-KMS managed keys",
+          "B. To speed up large uploads by enabling parallel multi-part transfers automatically",
+          "C. To automatically turn on versioning across every bucket in the entire account",
+          "D. To prevent accidental public exposure of bucket data — an anti-leak safety net",
         ],
-        answer: "B",
+        answer: "D",
         explanation:
-          "B is correct: Block Public Access guards against data leaks and can be enforced account-wide; keep it on unless a bucket must be public. It's unrelated to encryption, speed, or versioning.",
+          "Block Public Access is a safety net against data leaks and can be enforced account-wide; keep it on unless a bucket genuinely must be public. It does not handle encryption, upload speed, or versioning.",
       },
       {
         q: "Which fields are part of an S3 bucket policy statement?",
         options: [
-          "A. Effect, Principal, Action, Resource",
-          "B. CIDR, Port, Protocol",
-          "C. TTL, Weight, SetIdentifier",
-          "D. Engine, InstanceClass, Storage",
+          "A. CIDR block, port range, and protocol, exactly like an EC2 security group rule",
+          "B. TTL, weight, and set identifier, matching a Route 53 DNS record configuration",
+          "C. Effect, Principal, Action, and Resource (the four JSON statement fields)",
+          "D. Engine, instance class, and allocated storage, as used by an RDS database instance",
         ],
-        answer: "A",
+        answer: "C",
         explanation:
-          "A is correct: bucket policies are JSON with Effect, Principal, Action, and Resource. The others belong to security groups, Route 53 records, and RDS respectively.",
+          "An S3 bucket policy statement is JSON with Effect, Principal, Action, and Resource. The other field sets belong to security groups, Route 53 records, and RDS instances respectively.",
       },
     ],
   },
@@ -408,48 +506,63 @@ aws s3api put-bucket-versioning \\
     questions: [
       {
         q: "What must be enabled on BOTH source and destination buckets before S3 replication will work?",
-        options: ["A. Static website hosting", "B. Versioning", "C. Transfer Acceleration", "D. Requester Pays"],
-        answer: "B",
+        options: [
+          "A. Versioning, turned on for both the source and the destination bucket",
+          "B. Static website hosting configured on both the source and destination buckets",
+          "C. S3 Transfer Acceleration turned on for both the source and destination buckets",
+          "D. Requester Pays, so the destination account is billed for the replicated data",
+        ],
+        answer: "A",
         explanation:
-          "B is correct: replication requires versioning enabled on both buckets (plus an IAM role). The others are unrelated prerequisites.",
+          "S3 replication requires versioning enabled on both the source and destination buckets (plus an IAM role granting S3 permission to replicate). Static website hosting, Transfer Acceleration, and Requester Pays are unrelated prerequisites.",
       },
       {
         q: "After enabling replication, a team notices EXISTING objects weren't copied. Why, and what's the fix?",
         options: [
-          "A. Replication is broken; recreate the bucket",
-          "B. Only new objects replicate; use S3 Batch Replication for existing ones",
-          "C. Existing objects can never be replicated",
-          "D. They must disable versioning first",
+          "A. Replication is broken; the only supported fix is to delete and recreate the destination bucket",
+          "B. Existing objects can never be replicated once they are already sitting in the bucket",
+          "C. They must disable versioning on the source bucket first and then turn it back on",
+          "D. Only new objects replicate going forward; use S3 Batch Replication for the existing ones",
         ],
-        answer: "B",
+        answer: "D",
         explanation:
-          "B is correct: replication applies to new objects going forward; S3 Batch Replication copies existing (and previously failed) objects. It's not broken and old objects can be replicated.",
+          "Replication only applies to new objects created after it is enabled; S3 Batch Replication copies existing (and previously failed) objects. Replication is not broken, existing objects can be replicated, and versioning must stay enabled.",
       },
       {
         q: "Which replication type copies objects to a bucket in a DIFFERENT AWS Region?",
-        options: ["A. SRR", "B. CRR", "C. TTL", "D. ACL"],
+        options: [
+          "A. SRR (Same-Region Replication), which copies within a single Region only",
+          "B. CRR — Cross-Region Replication, which targets a bucket in another Region",
+          "C. TTL, the time-to-live value that controls how long DNS records are cached",
+          "D. ACL, an access control list attached to individual buckets or objects",
+        ],
         answer: "B",
         explanation:
-          "B is correct: Cross-Region Replication (CRR) targets another Region (compliance, latency, cross-account). SRR is same-Region; TTL and ACL are unrelated.",
+          "Cross-Region Replication (CRR) copies objects to a bucket in a different AWS Region (for compliance, lower latency, or cross-account needs). Same-Region Replication stays within one Region, while TTL and ACL are unrelated concepts.",
       },
       {
         q: "Which statement about S3 replication is TRUE?",
         options: [
-          "A. Replication is chained: bucket1→bucket2→bucket3 forwards bucket1's objects to bucket3",
-          "B. There is no chaining of replication",
-          "C. Deletions by version ID are always replicated",
-          "D. Replication is synchronous",
+          "A. Replication is chained, so bucket1 → bucket2 → bucket3 forwards bucket1's objects onward to bucket3",
+          "B. Deletions made with a specific version ID are always replicated to the destination bucket",
+          "C. There is no chaining of replication from one bucket through another to a third",
+          "D. Replication happens synchronously, blocking each upload until the copy completes",
         ],
-        answer: "B",
+        answer: "C",
         explanation:
-          "B is correct: replication does not chain. Versioned (by version ID) deletes are NOT replicated, and replication is asynchronous — so A, C, and D are false.",
+          "Replication does not chain — objects in bucket1 are not forwarded to bucket3 through an intermediate bucket2. Replication is asynchronous, and deletes made with a specific version ID are deliberately not replicated.",
       },
       {
         q: "A user overwrites an important object by mistake. Which S3 feature lets them recover the previous content?",
-        options: ["A. Versioning", "B. Transfer Acceleration", "C. Storage Lens", "D. Requester Pays"],
+        options: [
+          "A. Versioning, which retains the previous version of each overwritten object",
+          "B. S3 Transfer Acceleration, which speeds up uploads over long network distances",
+          "C. S3 Storage Lens, which reports storage usage and activity metrics across buckets",
+          "D. Requester Pays, which shifts data-transfer and request costs onto the requester",
+        ],
         answer: "A",
         explanation:
-          "A is correct: with versioning enabled, the previous version is retained and can be restored. The others don't provide recovery of overwritten objects.",
+          "With versioning enabled, the previous version of an overwritten object is retained and can be restored. Transfer Acceleration, Storage Lens, and Requester Pays do not provide recovery of overwritten content.",
       },
     ],
   },
@@ -535,57 +648,62 @@ aws s3api put-bucket-policy --bucket my-site-bucket --policy file://public-read.
       {
         q: "Your S3 static website returns '403 Forbidden' to visitors. What is the MOST likely fix?",
         options: [
-          "A. Enable versioning",
-          "B. Add a bucket policy allowing public s3:GetObject (and disable Block Public Access)",
-          "C. Switch the bucket to another region",
-          "D. Enable Transfer Acceleration",
+          "A. Enable bucket versioning so that previous versions of the web page are served to visitors automatically",
+          "B. Switch the bucket to a different AWS Region that is geographically closer to your visitors",
+          "C. Enable S3 Transfer Acceleration to route visitor requests over the AWS edge network",
+          "D. Add a bucket policy allowing public s3:GetObject, and disable Block Public Access",
         ],
-        answer: "B",
+        answer: "D",
         explanation:
-          "B is correct: a 403 on a static site means public reads aren't allowed — add a public-read bucket policy and turn off Block Public Access. Versioning, region, and acceleration don't govern public read access.",
+          "A 403 on a static site means anonymous reads aren't allowed — add a public-read bucket policy granting s3:GetObject and turn off Block Public Access. Versioning, Region, and Transfer Acceleration do not govern public read access.",
       },
       {
         q: "What does the S3 static website endpoint URL depend on?",
         options: [
-          "A. The object's version ID",
+          "A. The version ID of the specific object that the visitor is currently requesting",
           "B. The bucket's Region (e.g. bucket.s3-website-us-east-1.amazonaws.com)",
-          "C. The IAM user",
-          "D. The object tags",
+          "C. The IAM user who originally created the bucket and enabled website hosting",
+          "D. The object tags applied to the individual files that are stored in the bucket",
         ],
         answer: "B",
         explanation:
-          "B is correct: the website endpoint is region-specific: bucket-name.s3-website-region.amazonaws.com. Version IDs, IAM users, and tags don't form the URL.",
+          "The static website endpoint is Region-specific: bucket-name.s3-website-Region.amazonaws.com. Object version IDs, the IAM user, and object tags play no part in forming the URL.",
       },
       {
         q: "For a bucket's public-read policy to actually take effect for a website, you must also:",
         options: [
-          "A. Enable MFA Delete",
-          "B. Disable Block Public Access",
-          "C. Enable Requester Pays",
-          "D. Turn on CRR",
+          "A. Enable MFA Delete so that removing any public object requires a second authentication factor",
+          "B. Turn on Requester Pays so that visitors are billed for the bandwidth they consume",
+          "C. Disable Block Public Access so the public-read bucket policy can take effect",
+          "D. Turn on Cross-Region Replication to copy the site content to a second AWS Region",
         ],
-        answer: "B",
+        answer: "C",
         explanation:
-          "B is correct: Block Public Access will override a public policy, so it must be disabled for a genuinely public website. The others are unrelated to public access.",
+          "Block Public Access overrides a public bucket policy, so it must be disabled for a genuinely public website. MFA Delete, Requester Pays, and Cross-Region Replication are unrelated to serving public reads.",
       },
       {
         q: "S3 static website hosting is best suited for:",
         options: [
-          "A. Server-side rendered apps needing a database",
-          "B. Static content (HTML/CSS/JS/images)",
-          "C. Running containers",
-          "D. Hosting a MySQL database",
+          "A. Static content such as HTML, CSS, JavaScript, and image or media files",
+          "B. Server-side rendered applications that need to query a relational database on each request",
+          "C. Running long-lived containers that process background jobs continuously",
+          "D. Hosting a MySQL database engine that other application servers connect to",
         ],
-        answer: "B",
+        answer: "A",
         explanation:
-          "B is correct: it serves static assets. Dynamic/DB-backed apps and containers need compute (EC2/Lambda/ECS); S3 can't run a database.",
+          "S3 static website hosting serves static assets like HTML, CSS, JavaScript, and images. Dynamic, database-backed apps and containers need compute (EC2/Lambda/ECS), and S3 cannot run a database engine.",
       },
       {
         q: "To add HTTPS and a custom domain in front of an S3 static website, you typically use:",
-        options: ["A. CloudFront", "B. A NAT gateway", "C. An Internet Gateway only", "D. Storage Lens"],
-        answer: "A",
+        options: [
+          "A. A NAT gateway placed in front of the bucket to terminate the visitors' TLS connections",
+          "B. An Internet Gateway on its own, attached directly to the bucket's website endpoint",
+          "C. S3 Storage Lens, configured to publish the website over an encrypted HTTPS channel",
+          "D. CloudFront, a CDN placed in front to add HTTPS, a custom domain, and caching",
+        ],
+        answer: "D",
         explanation:
-          "A is correct: place CloudFront in front for HTTPS, custom domains, and caching. NAT/IGW are network routing; Storage Lens is analytics.",
+          "Place a CloudFront distribution in front of the S3 website to add HTTPS, a custom domain, and caching. NAT gateways and Internet Gateways are network routing components, and Storage Lens is an analytics feature.",
       },
     ],
   },
@@ -688,47 +806,62 @@ aws s3 cp s3://my-bucket/old.csv s3://my-bucket/old.csv \\
       {
         q: "Which statement about S3 durability across storage classes is TRUE?",
         options: [
-          "A. Standard is more durable than Glacier",
-          "B. All classes offer the same 11 nines (99.999999999%) durability",
-          "C. One-Zone-IA has lower durability because it's in one AZ",
-          "D. Durability depends on object size",
+          "A. S3 Standard is more durable than the Glacier archival storage classes",
+          "B. One-Zone-IA has a lower rated durability because it is stored in only one AZ",
+          "C. All classes offer the same 11 nines (99.999999999%) durability",
+          "D. The durability of an object depends on how large the object is in bytes",
         ],
-        answer: "B",
+        answer: "C",
         explanation:
-          "B is correct: all classes share 11 nines durability. What differs is availability and cost. (One-Zone-IA is still 11 nines within its AZ, but losing that AZ loses the data — an availability/loss risk, not a stated lower durability figure.)",
+          "All S3 classes share the same 11 nines (99.999999999%) durability; what differs is availability and cost. One-Zone-IA still has 11 nines within its AZ (losing that AZ is an availability/loss risk, not a lower durability figure), and durability is independent of object size.",
       },
       {
         q: "Data is rarely accessed but must be retrievable in MILLISECONDS when needed. Which class is the best fit?",
         options: [
-          "A. Glacier Deep Archive",
-          "B. Glacier Instant Retrieval",
-          "C. Standard",
-          "D. Glacier Flexible Retrieval",
+          "A. Glacier Deep Archive, restored within its standard 12-to-48-hour retrieval window",
+          "B. Glacier Instant Retrieval, for archives that must return in milliseconds",
+          "C. S3 Standard, kept permanently on the most expensive frequently-accessed tier",
+          "D. Glacier Flexible Retrieval, using its expedited minutes-to-hours retrieval mode",
         ],
         answer: "B",
         explanation:
-          "B is correct: Glacier Instant Retrieval gives millisecond access at archival pricing (90-day min). Deep Archive/Flexible have hours-long retrieval; Standard is pricier for rarely-accessed data.",
+          "Glacier Instant Retrieval provides millisecond access at archival pricing (90-day minimum) — the fit for rarely-accessed data that must return instantly. Deep Archive and Flexible Retrieval take hours, and Standard is expensive for rarely-accessed data.",
       },
       {
         q: "You don't know how often objects will be accessed and want to avoid retrieval fees while optimizing cost automatically. Which class?",
-        options: ["A. One-Zone-IA", "B. S3 Intelligent-Tiering", "C. Glacier Deep Archive", "D. Standard-IA"],
-        answer: "B",
+        options: [
+          "A. S3 Intelligent-Tiering, which auto-moves objects between access tiers",
+          "B. One-Zone-IA, which stores the data cheaply inside a single Availability Zone",
+          "C. Glacier Deep Archive, the lowest-cost class intended for long-term cold storage",
+          "D. Standard-IA, which is priced for data accessed infrequently but needed quickly",
+        ],
+        answer: "A",
         explanation:
-          "B is correct: Intelligent-Tiering auto-moves objects between tiers based on usage with no retrieval charges — ideal for unknown/changing patterns. The others require you to know the access pattern.",
+          "S3 Intelligent-Tiering automatically moves objects between access tiers based on usage and charges no retrieval fees — ideal when access patterns are unknown or changing. The other classes require you to already know the access pattern.",
       },
       {
         q: "Which class stores data in a SINGLE Availability Zone (so data is lost if that AZ is destroyed)?",
-        options: ["A. S3 Standard", "B. Standard-IA", "C. One-Zone-IA", "D. Glacier Flexible Retrieval"],
-        answer: "C",
+        options: [
+          "A. S3 Standard, which replicates every object across multiple Availability Zones",
+          "B. Standard-IA, which also spreads its data across several Availability Zones per Region",
+          "C. Glacier Flexible Retrieval, which archives copies across multiple Availability Zones",
+          "D. One-Zone-IA, which keeps the only copy inside a single Availability Zone",
+        ],
+        answer: "D",
         explanation:
-          "C is correct: One-Zone-IA keeps data in a single AZ (also true of Express One Zone). Standard, Standard-IA, and the Glacier tiers span multiple AZs.",
+          "One-Zone-IA stores data in a single Availability Zone (as does S3 Express One Zone), so the data is lost if that AZ is destroyed. S3 Standard, Standard-IA, and the Glacier tiers all span multiple AZs.",
       },
       {
         q: "For 7-year compliance archives that are almost never read and can tolerate 12+ hour retrieval, the cheapest choice is:",
-        options: ["A. Standard", "B. Glacier Deep Archive", "C. Standard-IA", "D. Intelligent-Tiering"],
+        options: [
+          "A. S3 Standard, keeping the archives on the frequently-accessed low-latency tier",
+          "B. Glacier Deep Archive, the lowest-cost class intended for long-term retention",
+          "C. Standard-IA, the infrequent-access tier meant for rapidly-retrievable backups",
+          "D. S3 Intelligent-Tiering, which automatically shuffles the archives between tiers",
+        ],
         answer: "B",
         explanation:
-          "B is correct: Glacier Deep Archive is the lowest-cost class for long-term retention with 12–48h retrieval and a 180-day minimum. The others cost more for cold, rarely-accessed data.",
+          "Glacier Deep Archive is the lowest-cost class for long-term retention, with 12–48 hour retrieval and a 180-day minimum — perfect for 7-year compliance archives. The other classes cost more for data that is almost never read.",
       },
     ],
   },
