@@ -935,6 +935,16 @@ function TopNav({
         >
           <Timer size={16} />
         </a>
+        <a
+          href="/solve"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="tip tip-bottom p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-accent"
+          data-tip="Practice (Solve · new tab)"
+          aria-label="Open the practice solve workspace in a new tab"
+        >
+          <Code2 size={16} />
+        </a>
         {user && (
           <div className="flex items-center gap-2">
             <div className="hidden sm:block text-right leading-tight">

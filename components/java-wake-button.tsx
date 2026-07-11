@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Coffee, CheckCircle2, AlertCircle } from "lucide-react";
 import { markJavaWarm } from "@/lib/code-runner";
 
@@ -9,16 +9,32 @@ import { markJavaWarm } from "@/lib/code-runner";
 // any Java code. Pings GET /api/run-java (which proxies the executor's /health)
 // so the ~30–60s cold start happens up-front, not mid-run. On success it marks
 // the runtime warm so the next Run skips the "Waking Java runtime…" modal.
+//
+// Once the server has been hit successfully the button DISABLES itself for a
+// while (the free tier stays warm ~15 min of activity), then re-enables so the
+// user can re-warm it before it spins down again.
 // ============================================================
 
 type Status = "idle" | "waking" | "ready" | "error";
 
+// Render free tier spins down after ~15 min idle; keep the button disabled just
+// under that so a re-warm becomes available shortly before it goes cold.
+const WARM_DISABLE_MS = 14 * 60 * 1000;
+
 export function JavaWakeButton({ className = "" }: { className?: string }) {
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState<string>("");
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+    },
+    []
+  );
 
   const wake = useCallback(async () => {
-    if (status === "waking") return;
+    if (status === "waking" || status === "ready") return;
     setStatus("waking");
     setMessage("");
     try {
@@ -33,6 +49,13 @@ export function JavaWakeButton({ className = "" }: { className?: string }) {
       if (res.ok && data.warm) {
         markJavaWarm();
         setStatus("ready");
+        // Disable for a while; re-enable so a re-warm is possible before the
+        // instance spins down.
+        if (resetTimer.current) clearTimeout(resetTimer.current);
+        resetTimer.current = setTimeout(
+          () => setStatus("idle"),
+          WARM_DISABLE_MS
+        );
       } else {
         setStatus("error");
         setMessage(data.error || `Failed (HTTP ${res.status})`);
@@ -46,13 +69,14 @@ export function JavaWakeButton({ className = "" }: { className?: string }) {
   const base =
     "inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-md border transition-colors";
 
+  // Warm & recently hit — disabled until the re-warm timer elapses.
   if (status === "ready") {
     return (
       <button
         type="button"
-        onClick={wake}
-        title="Java backend is awake. Click to ping again."
-        className={`${base} border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/15 ${className}`}
+        disabled
+        title="Java backend is awake. This will re-enable so you can re-warm it before it goes idle."
+        className={`${base} border-green-500/40 bg-green-500/10 text-green-400 cursor-default opacity-90 ${className}`}
       >
         <CheckCircle2 size={14} /> Java ready
       </button>

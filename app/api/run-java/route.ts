@@ -24,7 +24,9 @@ export const maxDuration = 60;
 const MAX_CODE_LEN = 20000;
 // Kept just under the 60s Vercel function limit so our AbortController fires
 // first and returns a friendly "waking up" message instead of a raw 504.
-const FETCH_TIMEOUT_MS = 55000;
+// This is the max we can wait per request on Hobby; keep the backend warm
+// (wake button / pinger) so this budget goes to execution, not cold starts.
+const FETCH_TIMEOUT_MS = 58000;
 
 // Deployed Java executor (Render free tier). Hard-coded default so no env vars
 // are required; RUN_JAVA_URL / RUN_JAVA_SECRET can still override if set.

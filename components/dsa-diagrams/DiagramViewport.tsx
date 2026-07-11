@@ -166,7 +166,7 @@ export function DiagramViewport({
   const modal =
     mounted && maximized
       ? createPortal(
-          <div className="fixed inset-0 z-[1000] bg-bg-base flex flex-col animate-fade-in">
+          <div className="fixed inset-0 z-[3000] bg-bg-base flex flex-col animate-fade-in">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
               <span className="text-[13px] font-mono text-text-secondary">
                 {title}

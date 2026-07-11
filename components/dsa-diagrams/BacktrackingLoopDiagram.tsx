@@ -1,20 +1,37 @@
 "use client";
 
+import { DiagramViewport } from "./DiagramViewport";
+
 // ============================================================
 // BacktrackingLoopDiagram — the choose → explore → un-choose cycle that
 // every backtracking solution is built from. Static, theme-aware SVG.
+// Wrapped in DiagramViewport so it gets the same pan / zoom / full-screen
+// controls as the other DSA diagrams.
 // ============================================================
 export function BacktrackingLoopDiagram() {
+  const caption = (
+    <p className="text-[13px] text-text-secondary">
+      The one loop every backtracking solution is built from —{" "}
+      <b className="text-text-primary">choose → explore → un-choose</b>. The base
+      case records a solution; a dead end (constraint violated) prunes the branch
+      early.
+    </p>
+  );
+
   return (
-    <div className="space-y-3">
-      <div className="overflow-x-auto rounded-md bg-bg-base/50 border border-border p-2">
-        <svg
-          viewBox="0 0 480 300"
-          className="block w-full min-w-[420px]"
-          xmlns="http://www.w3.org/2000/svg"
-          role="img"
-          aria-label="The choose, explore, un-choose loop"
-        >
+    <DiagramViewport
+      title="Backtracking — choose · explore · un-choose"
+      caption={caption}
+      height={320}
+    >
+      <svg
+        width={480}
+        height={300}
+        viewBox="0 0 480 300"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="The choose, explore, un-choose loop"
+      >
           <defs>
             <marker
               id="btl-arrow-choose"
@@ -226,13 +243,6 @@ export function BacktrackingLoopDiagram() {
             undo the last choice
           </text>
         </svg>
-      </div>
-      <p className="text-[13px] text-text-secondary">
-        The one loop every backtracking solution is built from —{" "}
-        <b className="text-text-primary">choose → explore → un-choose</b>. The
-        base case records a solution; a dead end (constraint violated) prunes the
-        branch early.
-      </p>
-    </div>
+    </DiagramViewport>
   );
 }
