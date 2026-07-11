@@ -8,6 +8,9 @@ An interactive, browser-based technical learning platform. It started as an
 AWS Solutions Architect Associate (SAA-C03) study app and is now a
 MULTI-COURSE platform: each course is a structured set of topics with
 explanations, diagrams, code, and quizzes, plus per-user progress tracking.
+Newer courses (esp. DSA Prep) add HANDS-ON runnable code — learners edit and
+execute examples and small coding drills right in the app (JS/Python/SQL in
+the browser, Java on a free backend service).
 
 GOAL
 ----
@@ -52,8 +55,25 @@ Hierarchy:
   Topic   = { id, title, section, domain, explanation, analogy, diagram(SVG),
               codeExample(s), problemStatement, questions[],
               + optional: tldr, subtopics, keyFacts, quickReference,
-                          diagramLegend }
-  Question= { q, options:[4], answer:"A"|"B"|"C"|"D", explanation }
+                          diagramLegend,
+              + SQL courses:  tryIt[]           (result-checked SQL exercises)
+              + DSA course:   pattern, difficulty, approaches[],
+                              diagramComponent, codeDrills[] }
+  Question= { q, options:[4], answer:"A"|"B"|"C"|"D", explanation, difficulty? }
+
+Extra content types (lib/topics/shared.ts):
+  SolutionApproach = { name, kind, idea, complexity{time,space}, variants[],
+                       code: CodeExample[] }   -> one DSA solution level
+                       (Brute -> Intermediate -> Optimal), multi-language
+  CodeExample      = { language, title, code, tab?, setup?, expectedOutput? }
+  TryItQuestion    = { id, prompt, difficulty, setup, starter, solution, ... }
+                       -> SQL exercise graded by comparing RESULT SETS
+  CodeDrill        = { id, prompt, difficulty, language, starter,
+                       expectedOutput, hint? }
+                       -> small "type + run + auto-check" coding problem
+                       (5 per DSA problem); graded by comparing normalized
+                       stdout to expectedOutput; runs JS/Python in-browser,
+                       Java on the backend service
 
 Every topic id is GLOBALLY UNIQUE (course-prefixed: fe-, be-, ai-, net-, sd-),
 which is why adding courses needs no backend change.
@@ -72,11 +92,24 @@ The whole interface is one large client component: app/page.tsx.
 The 6 tabs per topic (keys in TabKey):
   overview     -> TL;DR + subtopics + quick reference
   explanation  -> long-form prose
-  diagram      -> inline SVG + legend
+  diagram      -> inline SVG + legend  (DSA: interactive React diagram via
+                  components/dsa-diagrams, keyed by Topic.diagramComponent)
   analogy      -> real-world analogy
-  code         -> code example(s), tabbed, with syntax highlight + copy
-  quiz         -> multiple-choice questions, scored, with explanations
+  code         -> EDITABLE + RUNNABLE code. Learners can tweak any example
+                  (a "modified" badge shows when it differs from the original)
+                  and Run it. DSA problems render the Brute->Intermediate->
+                  Optimal "approach explorer" (outer tabs = approach, inner
+                  tabs = language) instead of a single example.
+  quiz         -> multiple-choice questions (scored, with explanations),
+                  PLUS "Code drills": 5 small type-and-run coding problems
+                  per DSA problem, auto-checked against expected output.
 Tabs are reorderable/openable/collapsible; that layout state is persisted.
+
+Standalone pages:
+  /playground     -> free coding sandbox (JavaScript / Python / SQL / Java),
+                     localStorage-persisted per language
+  /dsa-practice   -> timed multiple-choice OA simulator over the DSA question
+                     bank; attempts saved to progress (dsa-attempts shard)
 
 Everything the sidebar/search/dashboard/radar shows is SCOPED to the
 currently selected course (derived from courses[] -> its sectionIds).
@@ -92,6 +125,15 @@ Auth:
 Progress API:
   app/api/progress    (GET)  -> assemble all shards into one state
                       (PUT)  -> write ONE shard (client debounces writes)
+Java execution proxy:
+  app/api/run-java    (POST) -> auth-gated + rate-limited; forwards code to the
+                                external be-service /run and returns
+                                {stdout,stderr,exitCode,...}
+                      (GET)  -> pings be-service /health to WAKE the free-tier
+                                service before a run (returns {warm:true}).
+                                The <JavaWakeButton> uses this.
+  The Render URL is hard-coded as a default in the route (no env var required);
+  RUN_JAVA_URL / RUN_JAVA_SECRET override it if set.
 
 Firestore layout (sharded per user to avoid write races):
   users/{username}                         -> displayName, passwordHash, createdAt
@@ -99,6 +141,10 @@ Firestore layout (sharded per user to avoid write races):
   userProgress/{username}/sections/progress-> visited{}, topicTime{}, topicDone{},
                                               selectedTopicId, tabsDone{}
   userProgress/{username}/sections/quiz    -> answers{topicId}{qIndex}{selected,correct}
+  userProgress/{username}/sections/tryit   -> attempts{topicId}{itemId}{attempted,solved}
+                                              (used by BOTH SQL "Try it" AND the
+                                              DSA code drills — keyed by unique id)
+  userProgress/{username}/sections/dsa-attempts -> timed-practice attempt history
   userProgress/{username}/sections/ui      -> expanded{}, left/rightCollapsed,
                                               tabOrder[], openTabs[], collapsedPanels[],
                                               selectedCourseId
@@ -107,6 +153,29 @@ Progress is keyed by topicId, so it survives content/course additions.
 REQUIRED ENV (in .env.local locally, and in the deploy environment):
   FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
   (`next build` fails at page-data collection without them.)
+OPTIONAL ENV (Java execution; a working default is hard-coded so these are
+  NOT required):
+  RUN_JAVA_URL     -> be-service /run endpoint (defaults to the deployed Render
+                      URL in app/api/run-java/route.ts)
+  RUN_JAVA_SECRET  -> shared secret sent as `x-run-secret`; must match the same
+                      var on be-service. Leave unset if the service is open.
+
+
+JAVA EXECUTION SERVICE — be-service (separate repo: ../be-service)
+-----------------------------------------------------------------
+A tiny Node/Express service that compiles + runs Java, deployed FREE on Render
+(Docker image = Node 20 + JDK 21, runs as non-root). The browser never calls it
+directly — only the /api/run-java proxy does.
+  POST /run     -> { code } -> writes Main.java to a per-request temp dir,
+                   runs `javac` (8s timeout) then `java -Xmx128m Main` (5s
+                   timeout), caps stdout/stderr, deletes the dir. Public class
+                   MUST be named Main.
+  GET  /health  -> { ok:true, uptime } (used by the wake button + Render checks)
+Guardrails: hard timeouts (kills infinite loops), output caps, bounded heap,
+per-request temp dir, optional shared-secret header, per-IP rate limit.
+Free-tier note: spins down after ~15 min idle -> ~30-60s cold start on the next
+hit; the "Wake Java backend" button and "Waking Java runtime..." loader cover
+this. Ephemeral filesystem is fine (temp files are meant to vanish).
 
 
 COURSES & CONTENT COVERED (so far)
@@ -131,9 +200,18 @@ COURSES & CONTENT COVERED (so far)
                      (Claude Messages API, streaming, tool use, caching), RAG,
                      LangChain.   NOTE: the "AI Agents" section is still pending
                      (see TODO.txt).
+7. DSA Prep        — Recursion & Backtracking: one concept topic (the pattern:
+                     choose/explore/un-choose, pruning) + two problems
+                     (Subsets / power set, Combination Sum), each with
+                     Brute -> Intermediate -> Optimal solutions in
+                     Java / JavaScript / Python, interactive recursion-tree
+                     diagrams, MCQs, and 5 code drills apiece.
+                     (lib/topics/dsa-recursion-backtracking.ts; domain "DSA")
 
 New non-AWS content was adapted from a reference app (learn-main) and upgraded
 to this app's standard, with Networking and System Design authored fresh.
+The DSA course is the first to use editable+runnable code, the approach
+explorer, code drills, and the Java backend service.
 
 
 HOW TO EXTEND

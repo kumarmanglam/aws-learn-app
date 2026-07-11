@@ -16,10 +16,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
+// A cold free-tier compile can take 15–30s; without this Vercel would kill the
+// function at its short default (~10s) and return 504 before we get a result.
+// 60s is the max on Vercel's Hobby plan.
+export const maxDuration = 60;
 
 const MAX_CODE_LEN = 20000;
-// Render free tier can take ~30–60s to wake from idle; allow generous slack.
-const FETCH_TIMEOUT_MS = 70000;
+// Kept just under the 60s Vercel function limit so our AbortController fires
+// first and returns a friendly "waking up" message instead of a raw 504.
+const FETCH_TIMEOUT_MS = 55000;
 
 // Deployed Java executor (Render free tier). Hard-coded default so no env vars
 // are required; RUN_JAVA_URL / RUN_JAVA_SECRET can still override if set.

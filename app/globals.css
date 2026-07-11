@@ -53,6 +53,40 @@ body {
 .tok-flag   { color: #B79CFB; }          /* CLI flags --foo */
 .tok-cmd    { color: #7C8CF8; font-weight: 600; }   /* CLI command word */
 
+/* ---------- Prism theme (scoped to editable code editors) ----------
+   Same palette as the .tok-* colors above so the editable editor matches the
+   read-only blocks. Scoped under .code-hl so Prism's global .token classes
+   never leak into the rest of the app. */
+.code-hl .token.comment,
+.code-hl .token.prolog,
+.code-hl .token.doctype,
+.code-hl .token.cdata      { color: #5D6C80; font-style: italic; }
+.code-hl .token.punctuation { color: #E9EEF4; }
+.code-hl .token.keyword,
+.code-hl .token.control,
+.code-hl .token.directive,
+.code-hl .token.important  { color: #7C8CF8; }
+.code-hl .token.boolean,
+.code-hl .token.constant,
+.code-hl .token.null       { color: #F0596B; }
+.code-hl .token.number     { color: #F5A93F; }
+.code-hl .token.string,
+.code-hl .token.char,
+.code-hl .token.attr-value,
+.code-hl .token.regex      { color: #2FD9C4; }
+.code-hl .token.class-name,
+.code-hl .token.builtin,
+.code-hl .token.namespace  { color: #B79CFB; font-weight: 600; }
+.code-hl .token.function,
+.code-hl .token.method     { color: #6FD0FF; }
+.code-hl .token.operator,
+.code-hl .token.entity     { color: #C0A9F5; }
+.code-hl .token.property,
+.code-hl .token.tag,
+.code-hl .token.symbol,
+.code-hl .token.attr-name  { color: #E9EEF4; }
+.code-hl .token.annotation { color: #B79CFB; }
+
 /* ---------- SVG diagrams responsive ---------- */
 .diagram-container svg {
   width: 100%;

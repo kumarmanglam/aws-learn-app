@@ -21,28 +21,77 @@ export function CenterLoader({
 
   const overlay = (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center
-                bg-black/90 backdrop-blur-md
-                animate-fade-in p-4"
+      className="center-loader-overlay"
       role="status"
       aria-live="polite"
       aria-busy="true"
     >
-      <div
-        className="flex flex-col items-center justify-center gap-4
-                  w-[min(340px,calc(100vw-2rem))]
-                  rounded-2xl
-                  bg-white
-                  border border-slate-200
-                  px-10 py-8
-                  shadow-[0_20px_60px_rgba(0,0,0,0.35)]"
-      >
-        <Loader2 size={40} className="animate-spin text-[#7C8CF8]" />
+      <div className="center-loader-card">
+        <Loader2 size={40} className="center-loader-spinner" />
 
-        <div className="text-sm font-medium text-slate-800 text-center">
+        <div className="center-loader-label">
           {label}
         </div>
       </div>
+
+      <style jsx>{`
+        .center-loader-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background-color: rgba(0, 0, 0, 0.9);
+          backdrop-filter: blur(12px);
+          animation: fade-in 0.2s ease-out;
+          padding: 1rem;
+        }
+
+        .center-loader-card {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
+          width: min(340px, calc(100vw - 2rem));
+          border-radius: 1rem;
+          background-color: #ffffff;
+          border: 1px solid #e2e8f0;
+          padding: 2rem 2.5rem;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+        }
+
+        .center-loader-spinner {
+          animation: spin 1s linear infinite;
+          color: #7c8cf8;
+        }
+
+        .center-loader-label {
+          font-size: 0.875rem;
+          font-weight: 500;
+          color: #1e293b;
+          text-align: center;
+        }
+
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 

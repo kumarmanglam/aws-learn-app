@@ -104,6 +104,8 @@ import {
 import { CenterLoader } from "@/components/center-loader";
 import { JavaWakeButton } from "@/components/java-wake-button";
 import { DsaDiagram, hasDsaDiagram } from "@/components/dsa-diagrams";
+import CodeEditor from "react-simple-code-editor";
+import { highlightCode } from "@/lib/prism";
 
 // Resolve a CourseInfo.icon name to a lucide-react component (fallback: BookOpen).
 const COURSE_ICONS: Record<string, LucideIcon> = {
@@ -909,9 +911,11 @@ function TopNav({
         </a>
         <a
           href="/playground"
+          target="_blank"
+          rel="noopener noreferrer"
           className="tip tip-bottom p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-accent"
-          data-tip="Playground"
-          aria-label="Open code playground"
+          data-tip="Playground (new tab)"
+          aria-label="Open code playground in a new tab"
         >
           <Terminal size={16} />
         </a>
@@ -2738,8 +2742,6 @@ function EditableCodeEditor({
   running?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
-  const gutterRef = useRef<HTMLDivElement>(null);
-  const lineCount = value.split("\n").length;
   const dirty = original != null && value !== original;
 
   const onCopy = async () => {
@@ -2752,22 +2754,11 @@ function EditableCodeEditor({
     }
   };
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  // Only Ctrl/⌘+Enter to run here; the editor handles Tab (2-space) itself.
+  const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
       if (onRun && !running) onRun();
-      return;
-    }
-    if (e.key === "Tab") {
-      e.preventDefault();
-      const el = e.currentTarget;
-      const s = el.selectionStart;
-      const en = el.selectionEnd;
-      const next = value.slice(0, s) + "  " + value.slice(en);
-      onChange(next);
-      requestAnimationFrame(() => {
-        el.selectionStart = el.selectionEnd = s + 2;
-      });
     }
   };
 
@@ -2810,30 +2801,22 @@ function EditableCodeEditor({
           </button>
         </div>
       </div>
-      <div className="flex max-h-72 overflow-auto font-mono text-[12.5px] leading-[1.7]">
-        <div
-          ref={gutterRef}
-          aria-hidden
-          className="select-none py-2 pl-3 pr-2 text-right text-text-muted/50 border-r border-border/40 bg-bg-base/30"
-        >
-          {Array.from({ length: lineCount }, (_, i) => (
-            <div key={i}>{i + 1}</div>
-          ))}
-        </div>
-        <textarea
+      <div className="code-hl max-h-72 overflow-auto text-text-primary">
+        <CodeEditor
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onValueChange={onChange}
+          highlight={(code) => highlightCode(code, language)}
           onKeyDown={onKeyDown}
-          onScroll={(e) => {
-            if (gutterRef.current)
-              gutterRef.current.scrollTop = e.currentTarget.scrollTop;
-          }}
+          padding={12}
+          tabSize={2}
+          insertSpaces
           spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          wrap="off"
-          rows={Math.min(Math.max(lineCount, 3), 16)}
-          className="flex-1 min-w-0 resize-none bg-transparent text-text-primary outline-none py-2 px-3 leading-[1.7] whitespace-pre overflow-auto"
+          className="min-h-[4.5rem] text-[12.5px]"
+          style={{
+            fontFamily:
+              "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace",
+            lineHeight: 1.7,
+          }}
         />
       </div>
     </div>
