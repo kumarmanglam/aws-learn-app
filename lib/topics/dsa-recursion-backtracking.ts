@@ -213,6 +213,56 @@ print(solve([1, 2, 3]))`,
           "Pruning cuts a whole subtree before the recursive call is made. That early cut — not the recursion itself — is the efficiency gain over brute-force enumeration.",
       },
     ],
+    codeDrills: [
+      {
+        id: "rb-concept-d1",
+        prompt: "Print the integers **1 to 5**, one per line, using a **recursive** function (no loop).",
+        difficulty: "easy",
+        language: "java",
+        starter:
+          "public class Main {\n  static void count(int n) {\n    // base case + recurse\n  }\n  public static void main(String[] args) {\n    count(1);\n  }\n}\n",
+        expectedOutput: "1\n2\n3\n4\n5",
+        hint: "Base case: if n > 5 return. Otherwise print n, then call count(n + 1).",
+      },
+      {
+        id: "rb-concept-d2",
+        prompt: "Compute **5!** (factorial of 5) recursively and print it.",
+        difficulty: "easy",
+        language: "python",
+        starter: "def fact(n):\n    # your recursion here\n    pass\n\nprint(fact(5))\n",
+        expectedOutput: "120",
+        hint: "fact(0) = 1; otherwise n * fact(n - 1).",
+      },
+      {
+        id: "rb-concept-d3",
+        prompt: "Sum the array **[1, 2, 3, 4, 5]** using recursion and print the total.",
+        difficulty: "medium",
+        language: "javascript",
+        starter:
+          "function sum(arr, i = 0) {\n  // base case + recurse\n}\nconsole.log(sum([1, 2, 3, 4, 5]));\n",
+        expectedOutput: "15",
+        hint: "If i === arr.length return 0; else arr[i] + sum(arr, i + 1).",
+      },
+      {
+        id: "rb-concept-d4",
+        prompt: "Count **how many subsets** a 3-element set has by making a **take / skip** choice at each index, and print the count.",
+        difficulty: "medium",
+        language: "python",
+        starter:
+          "def count_subsets(nums, i=0):\n    # take nums[i] OR skip it\n    pass\n\nprint(count_subsets([1, 2, 3]))\n",
+        expectedOutput: "8",
+        hint: "Base case at i == len(nums) returns 1. Each level branches twice (take, skip).",
+      },
+      {
+        id: "rb-concept-d5",
+        prompt: "Print the **10th Fibonacci number** (fib(10) = 55) with a recursive fib.",
+        difficulty: "medium",
+        language: "javascript",
+        starter: "function fib(n) {\n  // n < 2 ? n : fib(n-1) + fib(n-2)\n}\nconsole.log(fib(10));\n",
+        expectedOutput: "55",
+        hint: "Two base cases collapse into: return n < 2 ? n : fib(n - 1) + fib(n - 2).",
+      },
+    ],
   },
 
   // =========================================================================
@@ -547,6 +597,58 @@ print(subsets([1, 2, 3]))`,
         answer: "B",
         explanation:
           "Sorting groups equal values; skipping a value equal to its predecessor at the same tree level prevents emitting the same subset twice. Removing duplicates outright would lose subsets like [2,2].",
+      },
+    ],
+    codeDrills: [
+      {
+        id: "rb-subsets-d1",
+        prompt: "A set of **3** elements has how many subsets? Print the count using a **bit shift** (1 << n).",
+        difficulty: "easy",
+        language: "java",
+        starter:
+          "public class Main {\n  public static void main(String[] args) {\n    int n = 3;\n    // print 2^n using a shift\n  }\n}\n",
+        expectedOutput: "8",
+        hint: "The power set of n elements has 2^n members: 1 << n.",
+      },
+      {
+        id: "rb-subsets-d2",
+        prompt: "Generate **all subsets of [1, 2]** iteratively and print the list. Expected: `[[], [1], [2], [1, 2]]`.",
+        difficulty: "medium",
+        language: "python",
+        starter:
+          "def subsets(nums):\n    res = [[]]\n    # for each x, add x to a copy of every existing subset\n    return res\n\nprint(subsets([1, 2]))\n",
+        expectedOutput: "[[], [1], [2], [1, 2]]",
+        hint: "res += [cur + [x] for cur in res] for each x in nums.",
+      },
+      {
+        id: "rb-subsets-d3",
+        prompt: "Same power set for **[1, 2]** in JS, but print it compactly with `JSON.stringify`. Expected: `[[],[1],[2],[1,2]]`.",
+        difficulty: "medium",
+        language: "javascript",
+        starter:
+          "function subsets(nums) {\n  let res = [[]];\n  // grow res for each element\n  return res;\n}\nconsole.log(JSON.stringify(subsets([1, 2])));\n",
+        expectedOutput: "[[],[1],[2],[1,2]]",
+        hint: "res = res.concat(res.map(s => [...s, x])) inside a for...of loop.",
+      },
+      {
+        id: "rb-subsets-d4",
+        prompt: "How many subsets **of size 2** does [1, 2, 3, 4] have? Print the count (choose 2 of 4).",
+        difficulty: "medium",
+        language: "python",
+        starter:
+          "from itertools import combinations\n# print how many size-2 subsets exist\n",
+        expectedOutput: "6",
+        hint: "len(list(combinations([1, 2, 3, 4], 2))) — that's C(4, 2) = 6.",
+      },
+      {
+        id: "rb-subsets-d5",
+        prompt: "Count the total subsets of **[1, 2, 3]** recursively with a take/skip branch at each index, and print it.",
+        difficulty: "hard",
+        language: "java",
+        starter:
+          "public class Main {\n  static int count(int[] nums, int i) {\n    // base case + two branches\n    return 0;\n  }\n  public static void main(String[] args) {\n    System.out.println(count(new int[]{1, 2, 3}, 0));\n  }\n}\n",
+        expectedOutput: "8",
+        hint: "Return 1 when i == nums.length; otherwise count(nums, i+1) + count(nums, i+1).",
       },
     ],
   },
@@ -944,6 +1046,58 @@ print(combinationSum([2, 3, 6, 7], 7))`,
         answer: "B",
         explanation:
           "Combination Sum II forbids reuse, so it recurses with i + 1; since the input may contain duplicates, it sorts and skips c[i] == c[i-1] at the same tree level to avoid duplicate combinations.",
+      },
+    ],
+    codeDrills: [
+      {
+        id: "rb-combination-sum-d1",
+        prompt: "Print the **sum** of the candidates array **[2, 3, 6, 7]**.",
+        difficulty: "easy",
+        language: "java",
+        starter:
+          "public class Main {\n  public static void main(String[] args) {\n    int[] a = {2, 3, 6, 7};\n    // sum and print\n  }\n}\n",
+        expectedOutput: "18",
+        hint: "A simple for-each accumulator: for (int x : a) s += x;",
+      },
+      {
+        id: "rb-combination-sum-d2",
+        prompt: "Count how many combinations of **[2, 3, 6, 7]** (numbers reusable) sum to **7**. Print the count.",
+        difficulty: "medium",
+        language: "python",
+        starter:
+          "def count(cands, target, i=0):\n    # reuse cands[i] OR move to i+1\n    pass\n\nprint(count([2, 3, 6, 7], 7))\n",
+        expectedOutput: "2",
+        hint: "Base: target==0 -> 1; target<0 or i==len -> 0. Recurse: count(...,target-cands[i], i) + count(...,target, i+1).",
+      },
+      {
+        id: "rb-combination-sum-d3",
+        prompt: "Same combination-sum **count** for target **7** over [2, 3, 6, 7], in JavaScript.",
+        difficulty: "medium",
+        language: "javascript",
+        starter:
+          "function count(cands, target, i = 0) {\n  // base cases + reuse/skip recursion\n}\nconsole.log(count([2, 3, 6, 7], 7));\n",
+        expectedOutput: "2",
+        hint: "Mirror the Python version: staying at i allows reuse; i + 1 moves on.",
+      },
+      {
+        id: "rb-combination-sum-d4",
+        prompt: "Now **collect** the actual combinations summing to 7 and print them. Expected: `[[2, 2, 3], [7]]`.",
+        difficulty: "hard",
+        language: "python",
+        starter:
+          "def combos(cands, target, i=0, path=None, res=None):\n    if path is None:\n        path, res = [], []\n    # choose -> explore -> un-choose, then skip\n    return res\n\nprint(combos([2, 3, 6, 7], 7))\n",
+        expectedOutput: "[[2, 2, 3], [7]]",
+        hint: "append cands[i], recurse at i (reuse), pop, then recurse at i+1. Record path when target hits 0.",
+      },
+      {
+        id: "rb-combination-sum-d5",
+        prompt: "Return the combination-sum **count** for target 7 over [2, 3, 6, 7] in Java, and print it.",
+        difficulty: "hard",
+        language: "java",
+        starter:
+          "public class Main {\n  static int count(int[] c, int target, int i) {\n    // base cases + reuse/skip\n    return 0;\n  }\n  public static void main(String[] args) {\n    System.out.println(count(new int[]{2, 3, 6, 7}, 7, 0));\n  }\n}\n",
+        expectedOutput: "2",
+        hint: "target==0 -> 1; target<0 || i==c.length -> 0; else count(c,target-c[i],i) + count(c,target,i+1).",
       },
     ],
   },

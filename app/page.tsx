@@ -71,14 +71,17 @@ import {
   type Question,
   type CodeExample,
   type TryItQuestion,
+  type CodeDrill,
   type Subtopic,
 } from "@/lib/topics";
 import {
   runJavaScript,
   runPython,
   runSql,
+  runJava,
   isPyodideReady,
   isSqlReady,
+  isJavaReady,
   runSqlChecked,
   type RunResult,
 } from "@/lib/code-runner";
@@ -99,6 +102,7 @@ import {
   recommendedRevisions,
 } from "@/lib/progress-metrics";
 import { CenterLoader } from "@/components/center-loader";
+import { JavaWakeButton } from "@/components/java-wake-button";
 import { DsaDiagram, hasDsaDiagram } from "@/components/dsa-diagrams";
 
 // Resolve a CourseInfo.icon name to a lucide-react component (fallback: BookOpen).
@@ -1691,7 +1695,16 @@ export default function Page() {
                 <X size={13} />
                 <span className="hidden lg:inline">Close all</span>
               </button>
-              <span className="ml-auto shrink-0 hidden sm:flex items-center gap-1 text-[11px] text-text-muted">
+              {selectedTopic.domain === "DSA" && (
+                <span className="ml-auto shrink-0 flex items-center">
+                  <JavaWakeButton />
+                </span>
+              )}
+              <span
+                className={`${
+                  selectedTopic.domain === "DSA" ? "" : "ml-auto"
+                } shrink-0 hidden sm:flex items-center gap-1 text-[11px] text-text-muted pl-2`}
+              >
                 <Clock size={11} />
                 {formatElapsed(accumulatedMs)}
               </span>
@@ -1821,6 +1834,7 @@ export default function Page() {
                         </>
                       )}
                       {k === "quiz" && (
+                        <>
                         <QuizPanel
                           topic={selectedTopic}
                           quiz={state.quiz}
@@ -1873,6 +1887,31 @@ export default function Page() {
                             );
                           }}
                         />
+                        {/* Code drills — 5 small type-and-run problems under the
+                            quiz. Shares the `tryit` persistence section. */}
+                        <CodeDrillPanel
+                          topic={selectedTopic}
+                          tryIt={state.tryIt}
+                          onAttempt={(drillId, next) => {
+                            setState((s) => ({
+                              ...s,
+                              tryIt: {
+                                ...s.tryIt,
+                                [selectedTopic.id]: {
+                                  ...(s.tryIt[selectedTopic.id] ?? {}),
+                                  [drillId]: next,
+                                },
+                              },
+                            }));
+                            syncTryIt(
+                              {
+                                [`attempts.${selectedTopic.id}.${drillId}`]: next,
+                              },
+                              500
+                            );
+                          }}
+                        />
+                        </>
                       )}
                     </Panel>
                   </div>
@@ -2571,12 +2610,13 @@ function ArchitecturePanel({ topic }: { topic: Topic }) {
 // in-browser. Everything else is display-only (no Run button).
 function runnableLang(
   language: string
-): "javascript" | "python" | "sql" | null {
+): "javascript" | "python" | "sql" | "java" | null {
   const l = language.toLowerCase();
   if (l === "javascript" || l === "js" || l === "node" || l === "nodejs")
     return "javascript";
   if (l === "python" || l === "py" || l === "python3") return "python";
   if (l === "sql" || l === "sqlite" || l === "mysql") return "sql";
+  if (l === "java") return "java";
   return null;
 }
 
@@ -2800,20 +2840,41 @@ function EditableCodeEditor({
   );
 }
 
+// Human-readable label for the runtime badge shown next to the Run button.
+function runtimeLabel(runLang: "javascript" | "python" | "sql" | "java"): string {
+  switch (runLang) {
+    case "python":
+      return "Pyodide (WASM)";
+    case "sql":
+      return "SQLite (sql.js)";
+    case "java":
+      return "Java runtime (server)";
+    default:
+      return "sandboxed Web Worker";
+  }
+}
+
 // ============================================================
-// RunControls — Run button + output for ONE code example.
-// JS/Python execute in-browser; non-runnable langs (Java) show their
-// `expectedOutput` as a reference result instead. Reused by ApproachPanel.
+// RunnableEditor — editable code editor + Run button + output for ONE example.
+// Learners can tweak the code (a "modified" badge appears once it differs from
+// the original) and re-run. JS runs in a Web Worker, Python via Pyodide, SQL
+// via sql.js, and Java compiles+runs on the backend service (via /api/run-java).
+// For Java, the authored `expectedOutput` (if any) stays available as a
+// reference behind a toggle. Used by ApproachPanel and the code drills.
 // ============================================================
-function RunControls({ example }: { example: CodeExample }) {
+function RunnableEditor({ example }: { example: CodeExample }) {
   const runLang = runnableLang(example.language);
+  const [code, setCode] = useState(example.code);
   const [running, setRunning] = useState(false);
   const [pyLoading, setPyLoading] = useState(false);
+  const [sqlLoading, setSqlLoading] = useState(false);
+  const [javaLoading, setJavaLoading] = useState(false);
   const [output, setOutput] = useState<RunResult | null>(null);
   const [showExpected, setShowExpected] = useState(false);
 
-  // Clear stale output whenever the shown example changes.
+  // Reset edits + output whenever the shown example changes.
   useEffect(() => {
+    setCode(example.code);
     setOutput(null);
     setShowExpected(false);
   }, [example.code, example.language]);
@@ -2824,12 +2885,28 @@ function RunControls({ example }: { example: CodeExample }) {
     setOutput(null);
     try {
       if (runLang === "javascript") {
-        setOutput(await runJavaScript(example.code));
+        setOutput(await runJavaScript(code));
+      } else if (runLang === "sql") {
+        const cold = !isSqlReady();
+        if (cold) setSqlLoading(true);
+        try {
+          setOutput(await runSql(code, example.setup));
+        } finally {
+          if (cold) setSqlLoading(false);
+        }
+      } else if (runLang === "java") {
+        const cold = !isJavaReady();
+        if (cold) setJavaLoading(true);
+        try {
+          setOutput(await runJava(code));
+        } finally {
+          if (cold) setJavaLoading(false);
+        }
       } else {
         const cold = !isPyodideReady();
         if (cold) setPyLoading(true);
         try {
-          setOutput(await runPython(example.code));
+          setOutput(await runPython(code));
         } finally {
           if (cold) setPyLoading(false);
         }
@@ -2843,27 +2920,22 @@ function RunControls({ example }: { example: CodeExample }) {
     } finally {
       setRunning(false);
     }
-  }, [runLang, example.code]);
+  }, [runLang, code, example.setup]);
 
-  // Non-runnable language (Java): offer its expected output as a reference.
+  // Non-runnable language with no runtime: fall back to read-only display.
   if (!runLang) {
-    if (!example.expectedOutput) return null;
+    if (!example.expectedOutput) return <CodeBlock example={example} />;
     return (
       <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowExpected((v) => !v)}
-            className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-1.5 rounded-md border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
-          >
-            <Terminal size={14} />{" "}
-            {showExpected ? "Hide expected output" : "Show expected output"}
-          </button>
-          <span className="text-[11px] text-text-muted">
-            {example.language.toUpperCase()} runs via a backend judge in the full
-            app — reference output shown here
-          </span>
-        </div>
+        <CodeBlock example={example} />
+        <button
+          type="button"
+          onClick={() => setShowExpected((v) => !v)}
+          className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-1.5 rounded-md border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+        >
+          <Terminal size={14} />{" "}
+          {showExpected ? "Hide expected output" : "Show expected output"}
+        </button>
         {showExpected && (
           <RunOutput
             output={{ stdout: example.expectedOutput, stderr: "" }}
@@ -2874,8 +2946,27 @@ function RunControls({ example }: { example: CodeExample }) {
     );
   }
 
+  const runLabel =
+    runLang === "python"
+      ? "Run Python"
+      : runLang === "sql"
+      ? "Run SQL"
+      : runLang === "java"
+      ? "Run Java"
+      : "Run JavaScript";
+
   return (
     <div className="space-y-2">
+      <EditableCodeEditor
+        language={example.language}
+        title={example.title}
+        value={code}
+        original={example.code}
+        onChange={setCode}
+        onReset={() => setCode(example.code)}
+        onRun={onRun}
+        running={running}
+      />
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -2889,11 +2980,19 @@ function RunControls({ example }: { example: CodeExample }) {
             </>
           ) : (
             <>
-              <Play size={14} /> Run{" "}
-              {runLang === "python" ? "Python" : "JavaScript"}
+              <Play size={14} /> {runLabel}
             </>
           )}
         </button>
+        {example.expectedOutput && (
+          <button
+            type="button"
+            onClick={() => setShowExpected((v) => !v)}
+            className="text-[11.5px] px-2.5 py-1 rounded-md border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+          >
+            {showExpected ? "Hide expected" : "Show expected"}
+          </button>
+        )}
         {output && !running && (
           <button
             type="button"
@@ -2904,12 +3003,20 @@ function RunControls({ example }: { example: CodeExample }) {
           </button>
         )}
         <span className="text-[11px] text-text-muted">
-          Runs in your browser ·{" "}
-          {runLang === "python" ? "Pyodide (WASM)" : "sandboxed Web Worker"}
+          {runLang === "java" ? "Runs on the server" : "Runs in your browser"} ·{" "}
+          {runtimeLabel(runLang)}
         </span>
       </div>
+      {showExpected && example.expectedOutput && (
+        <RunOutput
+          output={{ stdout: example.expectedOutput, stderr: "" }}
+          label="Expected output"
+        />
+      )}
       {output && <RunOutput output={output} />}
       {pyLoading && <CenterLoader label="Setting up Python runtime…" />}
+      {sqlLoading && <CenterLoader label="Setting up SQL runtime…" />}
+      {javaLoading && <CenterLoader label="Waking Java runtime…" />}
     </div>
   );
 }
@@ -3029,8 +3136,10 @@ function ApproachPanel({ topic }: { topic: Topic }) {
         </div>
       )}
 
-      <CodeBlock example={ex} />
-      <RunControls example={ex} />
+      {/* Editable + runnable: learners can tweak the solution and re-run
+          (JS/Python/SQL in-browser, Java on the backend). The key resets edits
+          when switching approach or language. */}
+      <RunnableEditor key={`${topic.id}-${approachIdx}-${langIdx}`} example={ex} />
     </div>
   );
 }
@@ -3424,6 +3533,264 @@ function TryItPanel({
           question={q}
           index={i}
           status={byTopic[q.id]}
+          onAttempt={onAttempt}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// Code drills — small "type + run + auto-check" problems (5 per DSA topic),
+// shown alongside the MCQ quiz. JS/Python run in-browser, Java on the backend;
+// correctness is by comparing normalized stdout to the drill's expectedOutput.
+// Progress reuses the same `tryit` persistence (keyed by globally-unique id).
+// ============================================================
+
+// Normalize output for a forgiving compare: unify line endings, trim trailing
+// whitespace per line, drop leading/trailing blank lines.
+function normalizeOutput(s: string): string {
+  return s
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/\s+$/g, ""))
+    .join("\n")
+    .replace(/^\n+/, "")
+    .replace(/\n+$/, "");
+}
+
+function checkOutput(actual: string, expected: string): boolean {
+  return normalizeOutput(actual) === normalizeOutput(expected);
+}
+
+function CodeDrillCard({
+  drill,
+  index,
+  status,
+  onAttempt,
+}: {
+  drill: CodeDrill;
+  index: number;
+  status: { attempted: boolean; solved: boolean } | undefined;
+  onAttempt: (id: string, next: { attempted: boolean; solved: boolean }) => void;
+}) {
+  const runLang = runnableLang(drill.language);
+  const [code, setCode] = useState(drill.starter);
+  const [output, setOutput] = useState<RunResult | null>(null);
+  const [correct, setCorrect] = useState<boolean | undefined>(undefined);
+  const [running, setRunning] = useState(false);
+  const [pyLoading, setPyLoading] = useState(false);
+  const [javaLoading, setJavaLoading] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+  const [showExpected, setShowExpected] = useState(false);
+
+  useEffect(() => {
+    setCode(drill.starter);
+    setOutput(null);
+    setCorrect(undefined);
+    setShowHint(false);
+    setShowExpected(false);
+  }, [drill.id, drill.starter]);
+
+  const solved = status?.solved ?? false;
+  const attempted = status?.attempted ?? false;
+
+  const onRun = useCallback(async () => {
+    if (!runLang) return;
+    setRunning(true);
+    setOutput(null);
+    setCorrect(undefined);
+    try {
+      let res: RunResult;
+      if (runLang === "javascript") {
+        res = await runJavaScript(code);
+      } else if (runLang === "java") {
+        const cold = !isJavaReady();
+        if (cold) setJavaLoading(true);
+        try {
+          res = await runJava(code);
+        } finally {
+          if (cold) setJavaLoading(false);
+        }
+      } else {
+        const cold = !isPyodideReady();
+        if (cold) setPyLoading(true);
+        try {
+          res = await runPython(code);
+        } finally {
+          if (cold) setPyLoading(false);
+        }
+      }
+      setOutput(res);
+      // Only grade a clean run (no runtime/compile error).
+      const ok = !res.error && checkOutput(res.stdout, drill.expectedOutput);
+      setCorrect(ok);
+      onAttempt(drill.id, { attempted: true, solved: solved || ok });
+    } catch (err) {
+      setOutput({
+        stdout: "",
+        stderr: "",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setRunning(false);
+    }
+  }, [runLang, code, drill.id, drill.expectedOutput, solved, onAttempt]);
+
+  return (
+    <div
+      className={`rounded-lg border p-4 space-y-3 ${
+        solved
+          ? "border-green-500/30 bg-green-500/[0.04]"
+          : "border-border bg-bg-card/40"
+      }`}
+    >
+      <div className="flex items-start gap-2 min-w-0">
+        <span className="shrink-0 w-6 h-6 rounded-full bg-accent/15 border border-accent/30 text-accent text-[12px] font-semibold flex items-center justify-center">
+          {index + 1}
+        </span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <DifficultyPill level={drill.difficulty} />
+            <span className="font-mono text-[10.5px] px-1.5 py-0.5 rounded bg-bg-base border border-border text-accent">
+              {drill.language.toUpperCase()}
+            </span>
+            {solved ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-green-400 font-medium">
+                <CheckCircle2 size={13} /> Solved
+              </span>
+            ) : attempted ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-yellow-400 font-medium">
+                <Circle size={13} /> Attempted
+              </span>
+            ) : (
+              <span className="text-[11px] text-text-muted">Not attempted</span>
+            )}
+          </div>
+          <p className="text-[13.5px] text-text-primary mt-1.5 leading-relaxed">
+            {renderBold(drill.prompt)}
+          </p>
+        </div>
+      </div>
+
+      {drill.hint && (
+        <div className="pl-8">
+          <button
+            type="button"
+            onClick={() => setShowHint((s) => !s)}
+            className="text-[11.5px] text-accent hover:underline"
+          >
+            {showHint ? "Hide hint" : "Show hint"}
+          </button>
+          {showHint && (
+            <div className="mt-1 text-[12px] text-text-secondary bg-bg-base/50 border border-border rounded px-2.5 py-1.5">
+              {renderBold(drill.hint)}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="pl-8 space-y-2">
+        <EditableCodeEditor
+          language={drill.language}
+          value={code}
+          original={drill.starter}
+          onChange={setCode}
+          onReset={() => setCode(drill.starter)}
+          onRun={onRun}
+          running={running}
+        />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={running || !runLang}
+            className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-1.5 rounded-md bg-accent text-bg-base hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {running ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Running…
+              </>
+            ) : (
+              <>
+                <Play size={14} /> Run &amp; Check
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowExpected((v) => !v)}
+            className="text-[11.5px] px-2.5 py-1 rounded-md border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+          >
+            {showExpected ? "Hide expected" : "Show expected"}
+          </button>
+          {correct === true && (
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-green-400">
+              <CheckCircle2 size={15} /> Correct — output matches.
+            </span>
+          )}
+          {correct === false && (
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-yellow-400">
+              <AlertCircle size={15} /> Not quite — output doesn&apos;t match yet.
+            </span>
+          )}
+        </div>
+
+        {showExpected && (
+          <RunOutput
+            output={{ stdout: drill.expectedOutput, stderr: "" }}
+            label="Expected output"
+          />
+        )}
+        {output && <RunOutput output={output} />}
+      </div>
+
+      {pyLoading && <CenterLoader label="Setting up Python runtime…" />}
+      {javaLoading && <CenterLoader label="Waking Java runtime…" />}
+    </div>
+  );
+}
+
+function CodeDrillPanel({
+  topic,
+  tryIt,
+  onAttempt,
+}: {
+  topic: Topic;
+  tryIt: TryItState;
+  onAttempt: (id: string, next: { attempted: boolean; solved: boolean }) => void;
+}) {
+  const drills = topic.codeDrills ?? [];
+  if (!drills.length) return null;
+
+  const byTopic = tryIt[topic.id] ?? {};
+  const solvedCount = drills.filter((d) => byTopic[d.id]?.solved).length;
+  const attemptedCount = drills.filter((d) => byTopic[d.id]?.attempted).length;
+
+  return (
+    <div className="mt-6 space-y-3">
+      <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-accent" />
+          <h3 className="text-[15px] font-semibold text-text-primary">
+            Code drills
+          </h3>
+        </div>
+        <div className="text-[11.5px] text-text-muted">
+          {solvedCount} solved · {attemptedCount}/{drills.length} attempted
+        </div>
+      </div>
+      <p className="text-[12.5px] text-text-muted -mt-1">
+        Solve each small problem in its own editor and Run &amp; Check. Progress
+        is saved as you go.
+      </p>
+      {drills.map((d, i) => (
+        <CodeDrillCard
+          key={d.id}
+          drill={d}
+          index={i}
+          status={byTopic[d.id]}
           onAttempt={onAttempt}
         />
       ))}

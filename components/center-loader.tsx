@@ -21,14 +21,25 @@ export function CenterLoader({
 
   const overlay = (
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/85 backdrop-blur-sm animate-fade-in p-4"
+      className="fixed inset-0 z-[9999] flex items-center justify-center
+                bg-black/90 backdrop-blur-md
+                animate-fade-in p-4"
       role="status"
       aria-live="polite"
       aria-busy="true"
     >
-      <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-black/5 bg-white px-10 py-8 shadow-2xl ring-1 ring-black/10 w-[min(320px,calc(100vw-2rem))]">
-        <Loader2 size={38} className="animate-spin text-[#7C8CF8]" />
-        <div className="text-[14px] font-medium text-[#1f2937] text-center">
+      <div
+        className="flex flex-col items-center justify-center gap-4
+                  w-[min(340px,calc(100vw-2rem))]
+                  rounded-2xl
+                  bg-white
+                  border border-slate-200
+                  px-10 py-8
+                  shadow-[0_20px_60px_rgba(0,0,0,0.35)]"
+      >
+        <Loader2 size={40} className="animate-spin text-[#7C8CF8]" />
+
+        <div className="text-sm font-medium text-slate-800 text-center">
           {label}
         </div>
       </div>

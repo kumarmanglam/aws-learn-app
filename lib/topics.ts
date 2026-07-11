@@ -19,6 +19,7 @@ export type {
   Domain,
   Topic,
   TryItQuestion,
+  CodeDrill,
   SectionInfo,
   CourseInfo,
 } from "./topics/shared";

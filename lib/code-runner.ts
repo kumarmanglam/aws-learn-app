@@ -230,6 +230,57 @@ export async function runPython(code: string): Promise<RunResult> {
 }
 
 // ------------------------------------------------------------
+// Java — compiled + run on a small backend service (Render free tier), reached
+// through our own auth-gated proxy at /api/run-java. Unlike JS/Python/SQL there
+// is no in-browser runtime: the JVM cannot run client-side. The first call
+// after the service has been idle pays a cold-start (~30–60s); `javaWarm` lets
+// the UI show a one-time "Waking Java runtime…" modal, mirroring Pyodide/sql.js.
+// ------------------------------------------------------------
+let javaWarm = false;
+
+/** True once at least one Java run has completed this session (the backend is
+ *  presumed warm) — used to decide whether to show the cold-start modal. */
+export function isJavaReady(): boolean {
+  return javaWarm;
+}
+
+/** Mark the Java backend as warm — called after a successful health-check so a
+ *  subsequent run skips the "Waking Java runtime…" modal. */
+export function markJavaWarm(): void {
+  javaWarm = true;
+}
+
+export async function runJava(code: string): Promise<RunResult> {
+  try {
+    const res = await fetch("/api/run-java", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      stdout?: string;
+      stderr?: string;
+      error?: string;
+    };
+    if (!res.ok) {
+      return { stdout: "", stderr: "", error: data.error || `Run failed (HTTP ${res.status}).` };
+    }
+    javaWarm = true;
+    return {
+      stdout: data.stdout ?? "",
+      stderr: data.stderr ?? "",
+      error: data.error,
+    };
+  } catch (err) {
+    return {
+      stdout: "",
+      stderr: "",
+      error: err instanceof Error ? err.message : "Could not reach the Java runtime.",
+    };
+  }
+}
+
+// ------------------------------------------------------------
 // SQL — sql.js (SQLite compiled to WASM), lazily loaded from CDN on first use.
 //
 // Real MySQL cannot run client-side (it's a client-server C++ engine with no

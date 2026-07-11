@@ -24,6 +24,13 @@ TECH STACK
 - Firebase Firestore (+ firebase-admin) for per-user progress
 - Auth: JWT in an httpOnly cookie (jose), passwords hashed with bcryptjs
 - recharts (dashboard radar chart), lucide-react (icons)
+- Live code execution:
+    JavaScript -> sandboxed Web Worker (in-browser)
+    Python     -> Pyodide / WASM (lazy-loaded from CDN)
+    SQL        -> sql.js / SQLite WASM (lazy-loaded)
+    Java       -> separate backend service "be-service" (Node/Express + JDK
+                  in Docker) hosted FREE on Render; reached via an auth-gated
+                  Next.js proxy at /api/run-java. (Its own repo: ../be-service)
 
 
 CONTENT MODEL — Course -> Section -> Topic  (CODE-FIRST, no CMS/DB)

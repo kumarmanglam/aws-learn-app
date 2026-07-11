@@ -14,19 +14,23 @@ import {
   runJavaScript,
   runPython,
   runSql,
+  runJava,
   isPyodideReady,
   isSqlReady,
+  isJavaReady,
   type RunResult,
 } from "@/lib/code-runner";
 import { CenterLoader } from "@/components/center-loader";
+import { JavaWakeButton } from "@/components/java-wake-button";
 
 // ============================================================
-// Playground — a dedicated in-browser coding sandbox.
-// JavaScript runs in a sandboxed Web Worker; Python via Pyodide (WASM),
-// loaded lazily on first Python run. No backend, no external execution API.
+// Playground — a dedicated coding sandbox.
+// JavaScript runs in a sandboxed Web Worker; Python via Pyodide (WASM) and SQL
+// via sql.js, both loaded lazily on first use. Java compiles & runs on the
+// backend service (via /api/run-java) — the only language that leaves the browser.
 // ============================================================
 
-type LangKey = "javascript" | "python" | "sql";
+type LangKey = "javascript" | "python" | "sql" | "java";
 
 const LANGUAGES: { key: LangKey; label: string; file: string; template: string }[] =
   [
@@ -80,6 +84,24 @@ GROUP BY customer
 ORDER BY revenue DESC;
 `,
     },
+    {
+      key: "java",
+      label: "Java",
+      file: "Main.java",
+      template: `// Java (compiled & run on the server). The public class must be Main.
+public class Main {
+    static int fib(int n) {
+        return n < 2 ? n : fib(n - 1) + fib(n - 2);
+    }
+
+    public static void main(String[] args) {
+        for (int i = 0; i < 10; i++) {
+            System.out.println("fib(" + i + ") = " + fib(i));
+        }
+    }
+}
+`,
+    },
   ];
 
 const TEMPLATES: Record<LangKey, string> = LANGUAGES.reduce(
@@ -96,6 +118,7 @@ export default function PlaygroundPage() {
   const [running, setRunning] = useState(false);
   const [pyLoading, setPyLoading] = useState(false);
   const [sqlLoading, setSqlLoading] = useState(false);
+  const [javaLoading, setJavaLoading] = useState(false);
   const [output, setOutput] = useState<RunResult | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
@@ -109,7 +132,8 @@ export default function PlaygroundPage() {
       if (
         savedLang === "javascript" ||
         savedLang === "python" ||
-        savedLang === "sql"
+        savedLang === "sql" ||
+        savedLang === "java"
       ) {
         setLanguage(savedLang);
       }
@@ -154,6 +178,14 @@ export default function PlaygroundPage() {
           setOutput(await runSql(sources.sql));
         } finally {
           if (cold) setSqlLoading(false);
+        }
+      } else if (language === "java") {
+        const cold = !isJavaReady();
+        if (cold) setJavaLoading(true);
+        try {
+          setOutput(await runJava(sources.java));
+        } finally {
+          if (cold) setJavaLoading(false);
         }
       } else {
         const cold = !isPyodideReady();
@@ -219,7 +251,7 @@ export default function PlaygroundPage() {
           <div className="leading-tight hidden sm:block">
             <div className="text-sm font-semibold">Playground</div>
             <div className="text-[11px] text-text-muted">
-              Run JavaScript, Python &amp; SQL in your browser
+              Run JavaScript, Python, SQL &amp; Java
             </div>
           </div>
         </div>
@@ -260,6 +292,7 @@ export default function PlaygroundPage() {
               </span>
             </div>
             <div className="flex items-center gap-1.5">
+              {language === "java" && <JavaWakeButton />}
               <button
                 type="button"
                 onClick={() => setSource("")}
@@ -331,7 +364,9 @@ export default function PlaygroundPage() {
               ? "Pyodide (WASM)"
               : language === "sql"
                 ? "SQLite (sql.js / WASM)"
-                : "sandboxed Web Worker"}
+                : language === "java"
+                  ? "Java runtime (server)"
+                  : "sandboxed Web Worker"}
           </div>
         </section>
 
@@ -438,6 +473,7 @@ export default function PlaygroundPage() {
 
       {pyLoading && <CenterLoader label="Setting up Python runtime…" />}
       {sqlLoading && <CenterLoader label="Setting up SQL runtime…" />}
+      {javaLoading && <CenterLoader label="Waking Java runtime…" />}
     </div>
   );
 }

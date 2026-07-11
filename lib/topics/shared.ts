@@ -42,6 +42,30 @@ export type TryItQuestion = {
   orderMatters?: boolean;
 };
 
+/**
+ * A small, code-based practice drill shown under a DSA problem (5 per topic).
+ * The learner types + runs a short solution and it's auto-checked by comparing
+ * normalized stdout to `expectedOutput`. Language-agnostic (Java runs on the
+ * backend service; JS/Python in-browser) — distinct from the SQL-only
+ * `TryItQuestion`, which grades by comparing result sets. These sit ALONGSIDE
+ * the topic's MCQ `questions`, not replacing them.
+ */
+export type CodeDrill = {
+  /** Stable, globally-unique id (e.g. "rb-subsets-d1") — the tracking key. */
+  id: string;
+  /** The small problem to solve (supports **bold**). */
+  prompt: string;
+  difficulty: "easy" | "medium" | "hard";
+  /** Runtime language: "java" | "javascript" | "python". */
+  language: string;
+  /** Pre-filled, editable starter code. */
+  starter: string;
+  /** Reference stdout; the learner's normalized output is compared to this. */
+  expectedOutput: string;
+  /** Optional nudge shown behind a "Hint" toggle. */
+  hint?: string;
+};
+
 export type CodeExample = {
   language: string;
   title: string;
@@ -158,6 +182,9 @@ export type Topic = {
   diagramLegend?: DiagramLegendItem[];
   /** Hands-on practice exercises rendered under the Code tab (SQL courses). */
   tryIt?: TryItQuestion[];
+  /** Small code-based drills (5 per DSA problem) — type, run, auto-checked
+   *  against expected stdout. Shown alongside the MCQ quiz. */
+  codeDrills?: CodeDrill[];
 
   // ---- Optional DSA fields (only set by the DSA Prep course) ----
   /** Pattern pill in the topic header, e.g. "Backtracking". */
