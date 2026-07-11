@@ -2633,7 +2633,13 @@ function ResultTable({
   );
 }
 
-function RunOutput({ output }: { output: RunResult }) {
+function RunOutput({
+  output,
+  label = "Output",
+}: {
+  output: RunResult;
+  label?: string;
+}) {
   const empty =
     !output.stdout &&
     !output.stderr &&
@@ -2647,7 +2653,7 @@ function RunOutput({ output }: { output: RunResult }) {
           ? `Result · ${output.table.rows.length} row${
               output.table.rows.length === 1 ? "" : "s"
             }`
-          : "{label}"}
+          : label}
       </div>
       <div className="p-3 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap max-h-72 overflow-auto">
         {empty && <span className="text-text-muted italic">(no output)</span>}
