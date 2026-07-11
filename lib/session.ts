@@ -8,15 +8,16 @@ const ISSUER = "saa-learning-app";
 const AUDIENCE = "saa-learning-app";
 const MAX_AGE_DAYS = 30;
 
+// Built-in fallback so the app works out-of-the-box without a .env.local.
+// Override with SESSION_SECRET in production (openssl rand -hex 32).
+const DEFAULT_SECRET = "saa-learning-app-default-session-secret-change-me";
+
 function getSecret(): Uint8Array {
   const secret = process.env.SESSION_SECRET;
-  if (!secret || secret.length < 32) {
-    throw new Error(
-      "SESSION_SECRET is missing or too short (need 32+ chars). " +
-        "Set it in .env.local; generate with: openssl rand -hex 32"
-    );
+  if (secret && secret.length >= 32) {
+    return new TextEncoder().encode(secret);
   }
-  return new TextEncoder().encode(secret);
+  return new TextEncoder().encode(DEFAULT_SECRET);
 }
 
 export type SessionPayload = {

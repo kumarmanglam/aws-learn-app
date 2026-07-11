@@ -7,11 +7,14 @@
 //   userProgress/{username}/sections/quiz
 //   userProgress/{username}/sections/ui
 //   userProgress/{username}/sections/kanban
+//   userProgress/{username}/sections/dsa-attempts
 //
-// GET  → assemble all four into a single response
+// GET  → assemble all sections into a single response
 // PUT  → write ONE section only (per-section debouncing on the client).
 //        For `quiz` we accept a flat patch of dotted paths so concurrent
-//        answers merge without overwrite races.
+//        answers merge without overwrite races. Every other section uses a
+//        deep `set(merge)`, so nested maps (e.g. dsa-attempts.attempts.<id>)
+//        merge without clobbering siblings.
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -21,7 +24,14 @@ import { FieldValue } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 
-const SECTIONS = ["profile", "progress", "quiz", "ui", "kanban"] as const;
+const SECTIONS = [
+  "profile",
+  "progress",
+  "quiz",
+  "ui",
+  "kanban",
+  "dsa-attempts",
+] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
 function sectionRef(username: string, section: SectionKey) {

@@ -22,6 +22,29 @@ export type CodeExample = {
   code: string;
   /** optional tab label when multiple examples appear together */
   tab?: string;
+  /** Reference stdout shown instead of a Run button for non-runnable
+   *  languages (e.g. Java). JS/Python execute in-browser and ignore this. */
+  expectedOutput?: string;
+};
+
+/** Big-O labels for a DSA solution approach. */
+export type Complexity = { time: string; space: string };
+
+/**
+ * One solution to a DSA problem at a given optimization level. A problem
+ * Topic exposes several of these (Brute Force → Intermediate → Optimal) via
+ * `Topic.approaches`; each carries the same idea in multiple languages.
+ */
+export type SolutionApproach = {
+  name: string; // "Brute Force" | "Better" | "Optimal" | variant name
+  /** drives the badge color in the approach explorer */
+  kind?: "brute-force" | "intermediate" | "optimal" | "variant";
+  idea: string; // supports **bold** (rendered via renderBold)
+  complexity: Complexity;
+  /** short notes on related variants (e.g. "Subsets II — sort + skip dupes") */
+  variants?: string[];
+  /** one entry per language (Java / JavaScript / Python) */
+  code: CodeExample[];
 };
 
 /** A structured Beginner-tab subtopic — heading + bullet list */
@@ -68,7 +91,9 @@ export type Domain =
   | "Frontend"
   | "Backend"
   | "AI"
-  | "SystemDesign";
+  | "SystemDesign"
+  // ---- Added for the DSA Prep course (coding-interview patterns) ----
+  | "DSA";
 
 export type Topic = {
   id: string;
@@ -98,6 +123,18 @@ export type Topic = {
   codeExamples?: CodeExample[];
   /** Legend rows shown below the architecture SVG. */
   diagramLegend?: DiagramLegendItem[];
+
+  // ---- Optional DSA fields (only set by the DSA Prep course) ----
+  /** Pattern pill in the topic header, e.g. "Backtracking". */
+  pattern?: string;
+  /** Difficulty pill in the topic header. */
+  difficulty?: "Easy" | "Medium" | "Hard";
+  /** Brute → Intermediate → Optimal solutions. When present, the Code tab
+   *  renders the multi-approach explorer instead of a single example. */
+  approaches?: SolutionApproach[];
+  /** Key into the interactive diagram registry (components/dsa-diagrams).
+   *  When set and known, overrides the inline `diagram` SVG string. */
+  diagramComponent?: string;
 };
 
 export type SectionInfo = {

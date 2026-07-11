@@ -57,6 +57,7 @@ import {
   Terminal,
   LayoutDashboard,
   KanbanSquare,
+  Timer,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -90,6 +91,7 @@ import {
   recommendedRevisions,
 } from "@/lib/progress-metrics";
 import { CenterLoader } from "@/components/center-loader";
+import { DsaDiagram, hasDsaDiagram } from "@/components/dsa-diagrams";
 
 // Resolve a CourseInfo.icon name to a lucide-react component (fallback: BookOpen).
 const COURSE_ICONS: Record<string, LucideIcon> = {
@@ -99,6 +101,7 @@ const COURSE_ICONS: Record<string, LucideIcon> = {
   Sparkles,
   Network,
   Boxes,
+  Brain,
 };
 
 // ============================================================
@@ -581,7 +584,7 @@ function CodeBlock({ example }: { example: CodeExample }) {
   }, [example.code]);
 
   return (
-    <div className="relative rounded-md border border-border bg-[#0d1117] overflow-hidden">
+    <div className="relative rounded-md border border-border bg-[#080B10] overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 bg-bg-base/40 border-b border-border">
         <div className="flex items-center gap-2 text-[11px] text-text-muted">
@@ -902,6 +905,14 @@ function TopNav({
           aria-label="Open Kanban board"
         >
           <KanbanSquare size={16} />
+        </a>
+        <a
+          href="/dsa-practice"
+          className="tip tip-bottom p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-accent"
+          data-tip="Timed DSA practice"
+          aria-label="Open timed DSA practice"
+        >
+          <Timer size={16} />
         </a>
         {user && (
           <div className="flex items-center gap-2">
@@ -1652,9 +1663,29 @@ export default function Page() {
                     <Sparkles size={20} />
                   </div>
                   <div>
-                    <h1 className="text-lg font-bold text-text-primary leading-tight">
-                      {selectedTopic.title}
-                    </h1>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h1 className="text-lg font-bold text-text-primary leading-tight">
+                        {selectedTopic.title}
+                      </h1>
+                      {selectedTopic.pattern && (
+                        <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-full border border-success/40 bg-success/10 text-success">
+                          {selectedTopic.pattern}
+                        </span>
+                      )}
+                      {selectedTopic.difficulty && (
+                        <span
+                          className={`text-[10.5px] font-mono px-2 py-0.5 rounded-full border ${
+                            selectedTopic.difficulty === "Hard"
+                              ? "border-danger/40 bg-danger/10 text-danger"
+                              : selectedTopic.difficulty === "Medium"
+                              ? "border-warning/40 bg-warning/10 text-warning"
+                              : "border-success/40 bg-success/10 text-success"
+                          }`}
+                        >
+                          {selectedTopic.difficulty}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-[11.5px] text-text-muted">
                       {selectedTopic.domain} · {topicScore(selectedTopic.id, state.quiz).answered} / {selectedTopic.questions.length} questions answered
                     </div>
@@ -2164,10 +2195,10 @@ function RightSidebar({
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={radarData} outerRadius="75%">
-                <PolarGrid stroke="#2d3a4f" />
-                <PolarAngleAxis dataKey="domain" tick={{ fill: "#b0bac6", fontSize: 10 }} />
-                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: "#8b949e", fontSize: 9 }} axisLine={false} />
-                <Radar name="Score" dataKey="score" stroke="#ff9900" fill="#ff9900" fillOpacity={0.25} />
+                <PolarGrid stroke="#232D3C" />
+                <PolarAngleAxis dataKey="domain" tick={{ fill: "#94A2B5", fontSize: 10 }} />
+                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: "#5D6C80", fontSize: 9 }} axisLine={false} />
+                <Radar name="Score" dataKey="score" stroke="#7C8CF8" fill="#7C8CF8" fillOpacity={0.25} />
               </RadarChart>
             </ResponsiveContainer>
           </div>
@@ -2390,10 +2421,14 @@ function AnalogyPanel({ topic }: { topic: Topic }) {
 function ArchitecturePanel({ topic }: { topic: Topic }) {
   return (
     <div className="space-y-3">
-      <div
-        className="diagram-container rounded-md bg-bg-base/50 p-3 border border-border overflow-x-auto"
-        dangerouslySetInnerHTML={{ __html: topic.diagram }}
-      />
+      {hasDsaDiagram(topic.diagramComponent) ? (
+        <DsaDiagram name={topic.diagramComponent} />
+      ) : (
+        <div
+          className="diagram-container rounded-md bg-bg-base/50 p-3 border border-border overflow-x-auto"
+          dangerouslySetInnerHTML={{ __html: topic.diagram }}
+        />
+      )}
       {topic.diagramLegend && topic.diagramLegend.length > 0 && (
         <div className="rounded-md border border-border bg-bg-card/40 p-3">
           <div className="text-[11px] uppercase tracking-wide text-text-muted mb-2 font-semibold">Legend</div>
@@ -2423,13 +2458,19 @@ function runnableLang(language: string): "javascript" | "python" | null {
   return null;
 }
 
-function RunOutput({ output }: { output: RunResult }) {
+function RunOutput({
+  output,
+  label = "Output",
+}: {
+  output: RunResult;
+  label?: string;
+}) {
   const empty =
     !output.stdout && !output.stderr && !output.error && output.result == null;
   return (
-    <div className="rounded-md border border-border bg-[#0d1117] overflow-hidden animate-fade-in">
+    <div className="rounded-md border border-border bg-[#080B10] overflow-hidden animate-fade-in">
       <div className="px-3 py-1.5 border-b border-border bg-bg-base/40 text-[11px] uppercase tracking-wide text-text-muted">
-        Output
+        {label}
       </div>
       <div className="p-3 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap max-h-72 overflow-auto">
         {empty && <span className="text-text-muted italic">(no output)</span>}
@@ -2449,6 +2490,241 @@ function RunOutput({ output }: { output: RunResult }) {
   );
 }
 
+// ============================================================
+// RunControls — Run button + output for ONE code example.
+// JS/Python execute in-browser; non-runnable langs (Java) show their
+// `expectedOutput` as a reference result instead. Reused by ApproachPanel.
+// ============================================================
+function RunControls({ example }: { example: CodeExample }) {
+  const runLang = runnableLang(example.language);
+  const [running, setRunning] = useState(false);
+  const [pyLoading, setPyLoading] = useState(false);
+  const [output, setOutput] = useState<RunResult | null>(null);
+  const [showExpected, setShowExpected] = useState(false);
+
+  // Clear stale output whenever the shown example changes.
+  useEffect(() => {
+    setOutput(null);
+    setShowExpected(false);
+  }, [example.code, example.language]);
+
+  const onRun = useCallback(async () => {
+    if (!runLang) return;
+    setRunning(true);
+    setOutput(null);
+    try {
+      if (runLang === "javascript") {
+        setOutput(await runJavaScript(example.code));
+      } else {
+        const cold = !isPyodideReady();
+        if (cold) setPyLoading(true);
+        try {
+          setOutput(await runPython(example.code));
+        } finally {
+          if (cold) setPyLoading(false);
+        }
+      }
+    } catch (err) {
+      setOutput({
+        stdout: "",
+        stderr: "",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setRunning(false);
+    }
+  }, [runLang, example.code]);
+
+  // Non-runnable language (Java): offer its expected output as a reference.
+  if (!runLang) {
+    if (!example.expectedOutput) return null;
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowExpected((v) => !v)}
+            className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-1.5 rounded-md border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+          >
+            <Terminal size={14} />{" "}
+            {showExpected ? "Hide expected output" : "Show expected output"}
+          </button>
+          <span className="text-[11px] text-text-muted">
+            {example.language.toUpperCase()} runs via a backend judge in the full
+            app — reference output shown here
+          </span>
+        </div>
+        {showExpected && (
+          <RunOutput
+            output={{ stdout: example.expectedOutput, stderr: "" }}
+            label="Expected output"
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={onRun}
+          disabled={running}
+          className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-1.5 rounded-md bg-accent text-bg-base hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {running ? (
+            <>
+              <Loader2 size={14} className="animate-spin" /> Running…
+            </>
+          ) : (
+            <>
+              <Play size={14} /> Run{" "}
+              {runLang === "python" ? "Python" : "JavaScript"}
+            </>
+          )}
+        </button>
+        {output && !running && (
+          <button
+            type="button"
+            onClick={() => setOutput(null)}
+            className="text-[11.5px] px-2.5 py-1 rounded-md border border-border bg-bg-base hover:bg-bg-hover text-text-secondary hover:text-text-primary"
+          >
+            Clear output
+          </button>
+        )}
+        <span className="text-[11px] text-text-muted">
+          Runs in your browser ·{" "}
+          {runLang === "python" ? "Pyodide (WASM)" : "sandboxed Web Worker"}
+        </span>
+      </div>
+      {output && <RunOutput output={output} />}
+      {pyLoading && <CenterLoader label="Setting up Python runtime…" />}
+    </div>
+  );
+}
+
+// A single Time/Space complexity pill.
+function ComplexityBadge({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2.5 py-1 rounded-md border border-border bg-bg-base">
+      <span className="uppercase tracking-wide text-text-muted">{label}</span>
+      <span className="text-text-primary font-semibold">{value}</span>
+    </span>
+  );
+}
+
+const APPROACH_ACCENT: Record<string, string> = {
+  "brute-force": "text-danger border-danger/40 bg-danger/10",
+  intermediate: "text-warning border-warning/40 bg-warning/10",
+  optimal: "text-success border-success/40 bg-success/10",
+  variant: "text-accent border-accent/40 bg-accent/10",
+};
+
+// ============================================================
+// ApproachPanel — Brute → Intermediate → Optimal explorer for DSA problems.
+// Outer tabs = approaches; inner tabs = languages (Java/JS/Python).
+// ============================================================
+function ApproachPanel({ topic }: { topic: Topic }) {
+  const approaches = topic.approaches ?? [];
+  const [approachIdx, setApproachIdx] = useState(0);
+  const [langIdx, setLangIdx] = useState(0);
+
+  // Reset selection whenever the topic changes so indices never dangle.
+  useEffect(() => {
+    setApproachIdx(0);
+    setLangIdx(0);
+  }, [topic.id]);
+
+  const approach = approaches[Math.min(approachIdx, approaches.length - 1)];
+  if (!approach) return null;
+  const langs = approach.code;
+  const ex = langs[Math.min(langIdx, langs.length - 1)];
+
+  return (
+    <div className="space-y-4">
+      {/* Outer: approach selector */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {approaches.map((a, i) => {
+          const active = i === approachIdx;
+          const accent = APPROACH_ACCENT[a.kind ?? "variant"];
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => {
+                setApproachIdx(i);
+                setLangIdx(0);
+              }}
+              className={`text-[12.5px] font-medium px-3 py-1.5 rounded-md border transition-colors ${
+                active
+                  ? accent
+                  : "border-border text-text-muted hover:text-text-primary hover:bg-bg-hover"
+              }`}
+            >
+              {a.name}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Complexity badges */}
+      <div className="flex flex-wrap items-center gap-2">
+        <ComplexityBadge label="Time" value={approach.complexity.time} />
+        <ComplexityBadge label="Space" value={approach.complexity.space} />
+      </div>
+
+      {/* Idea */}
+      <p className="text-[13.5px] leading-relaxed text-text-secondary">
+        {renderBold(approach.idea, `idea-${approachIdx}`)}
+      </p>
+
+      {/* Variants */}
+      {approach.variants && approach.variants.length > 0 && (
+        <div className="rounded-md border border-border bg-bg-card/40 p-3">
+          <div className="text-[11px] uppercase tracking-wide text-text-muted mb-1.5 font-semibold">
+            Variants
+          </div>
+          <ul className="space-y-1">
+            {approach.variants.map((v, i) => (
+              <li
+                key={i}
+                className="flex items-start gap-2 text-[12.5px] text-text-secondary"
+              >
+                <span className="text-accent select-none mt-0.5 shrink-0">→</span>
+                <span>{renderBold(v, `var-${approachIdx}-${i}`)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Inner: language selector */}
+      {langs.length > 1 && (
+        <div className="flex items-center gap-1 border-b border-border">
+          {langs.map((e, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setLangIdx(i)}
+              className={`px-3 py-1.5 text-[12px] rounded-t-md border-t border-l border-r transition-colors ${
+                i === Math.min(langIdx, langs.length - 1)
+                  ? "border-border bg-[#080B10] text-accent"
+                  : "border-transparent text-text-muted hover:text-text-primary"
+              }`}
+            >
+              {e.tab ?? e.language.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <CodeBlock example={ex} />
+      <RunControls example={ex} />
+    </div>
+  );
+}
+
 function CodePanel({
   topic,
   activeTab,
@@ -2458,6 +2734,12 @@ function CodePanel({
   activeTab: number;
   setActiveTab: (n: number) => void;
 }) {
+  // DSA problems expose Brute → Intermediate → Optimal solutions; render the
+  // multi-approach explorer instead of the single-example flow.
+  if (topic.approaches && topic.approaches.length > 0) {
+    return <ApproachPanel topic={topic} />;
+  }
+
   const examples: CodeExample[] = topic.codeExamples ?? [topic.codeExample];
   const idx = Math.min(activeTab, examples.length - 1);
   const ex = examples[idx];
@@ -2511,7 +2793,7 @@ function CodePanel({
               onClick={() => setActiveTab(i)}
               className={`px-3 py-1.5 text-[12px] rounded-t-md border-t border-l border-r transition-colors ${
                 i === idx
-                  ? "border-border bg-[#0d1117] text-accent"
+                  ? "border-border bg-[#080B10] text-accent"
                   : "border-transparent text-text-muted hover:text-text-primary"
               }`}
             >

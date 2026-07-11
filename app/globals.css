@@ -8,8 +8,8 @@
 
 html,
 body {
-  background-color: #0f1419;
-  color: #e6edf3;
+  background-color: #0A0E13;
+  color: #E9EEF4;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   scroll-behavior: smooth;
 }
@@ -20,20 +20,20 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #1a2332;
+  background: #111823;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3d4d68;
+  background: #2E3B4E;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #4d5d78;
+  background: #3C4B60;
 }
 
 /* ---------- Code block (legacy fallback) ---------- */
 .code-block {
-  background: #0d1117;
-  border: 1px solid #2d3a4f;
+  background: #080B10;
+  border: 1px solid #232D3C;
   border-radius: 8px;
   padding: 16px;
   overflow-x: auto;
@@ -43,15 +43,15 @@ body {
 }
 
 /* ---------- Custom syntax-highlighter colors ---------- */
-.tok-kw     { color: #ff9900; }          /* keywords / JSON keys */
-.tok-str    { color: #a5d6ff; }          /* string literals */
-.tok-num    { color: #79c0ff; }          /* numbers */
-.tok-com    { color: #6e7681; font-style: italic; } /* comments */
-.tok-bool   { color: #f97583; }          /* booleans / null */
-.tok-punct  { color: #e6edf3; }          /* brackets / punctuation */
-.tok-aws    { color: #ffa657; font-weight: 600; }   /* AWS service names */
-.tok-flag   { color: #d2a8ff; }          /* CLI flags --foo */
-.tok-cmd    { color: #ff9900; font-weight: 600; }   /* CLI command word */
+.tok-kw     { color: #7C8CF8; }          /* keywords / JSON keys */
+.tok-str    { color: #2FD9C4; }          /* string literals */
+.tok-num    { color: #F5A93F; }          /* numbers */
+.tok-com    { color: #5D6C80; font-style: italic; } /* comments */
+.tok-bool   { color: #F0596B; }          /* booleans / null */
+.tok-punct  { color: #E9EEF4; }          /* brackets / punctuation */
+.tok-aws    { color: #B79CFB; font-weight: 600; }   /* AWS service names */
+.tok-flag   { color: #B79CFB; }          /* CLI flags --foo */
+.tok-cmd    { color: #7C8CF8; font-weight: 600; }   /* CLI command word */
 
 /* ---------- SVG diagrams responsive ---------- */
 .diagram-container svg {
@@ -64,16 +64,16 @@ body {
 
 /* ---------- Quiz focus ring ---------- */
 .quiz-option:focus-visible {
-  outline: 2px solid #ff9900;
+  outline: 2px solid #7C8CF8;
   outline-offset: 2px;
 }
 
 /* ---------- Glass-morphism for sticky tab bar ---------- */
 .glass {
-  background: rgba(26, 35, 50, 0.72);
+  background: rgba(17, 24, 35, 0.72);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(45, 58, 79, 0.6);
+  border-bottom: 1px solid rgba(35, 45, 60, 0.6);
 }
 
 /* ---------- Animations ---------- */
@@ -111,16 +111,16 @@ body {
 .sheet-enter { animation: sheetUp 260ms cubic-bezier(0.2, 0.65, 0.2, 1); }
 
 /* ---------- Gradient panel border ---------- */
-.gradient-border-blue   { border-image: linear-gradient(180deg, #3b82f6, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
-.gradient-border-purple { border-image: linear-gradient(180deg, #a855f7, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
-.gradient-border-orange { border-image: linear-gradient(180deg, #ff9900, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
-.gradient-border-green  { border-image: linear-gradient(180deg, #10b981, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
-.gradient-border-yellow { border-image: linear-gradient(180deg, #f59e0b, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
-.gradient-border-red    { border-image: linear-gradient(180deg, #ef4444, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-blue   { border-image: linear-gradient(180deg, #7C8CF8, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-purple { border-image: linear-gradient(180deg, #B79CFB, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-orange { border-image: linear-gradient(180deg, #7C8CF8, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-green  { border-image: linear-gradient(180deg, #2FD9C4, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-yellow { border-image: linear-gradient(180deg, #F5A93F, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
+.gradient-border-red    { border-image: linear-gradient(180deg, #F0596B, transparent 80%) 1; border-left-width: 3px; border-left-style: solid; }
 
 /* ---------- Tab drag/drop visuals ---------- */
 .tab-drop-target {
-  outline: 2px dashed #ff9900;
+  outline: 2px dashed #7C8CF8;
   outline-offset: -2px;
 }
 .tab-dragging {
@@ -137,12 +137,12 @@ body {
   left: calc(100% + 8px);
   top: 50%;
   transform: translateY(-50%);
-  background: #1a2332;
-  color: #e6edf3;
+  background: #111823;
+  color: #E9EEF4;
   font-size: 11px;
   padding: 4px 8px;
   border-radius: 4px;
-  border: 1px solid #2d3a4f;
+  border: 1px solid #232D3C;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
@@ -161,10 +161,21 @@ body {
 
 /* ---------- Highlight callout (TL;DR) ---------- */
 .tldr-callout {
-  border-left: 4px solid #ff9900;
-  background: linear-gradient(90deg, rgba(255, 153, 0, 0.12), rgba(255, 153, 0, 0));
+  border-left: 4px solid #7C8CF8;
+  background: linear-gradient(90deg, rgba(124, 140, 248, 0.12), rgba(124, 140, 248, 0));
   padding: 12px 16px;
   border-radius: 4px;
+}
+
+/* ---------- DSA diagram flow animation ---------- */
+.dsa-dashflow {
+  stroke-dasharray: 6 6;
+  animation: dsaDashflow 1s linear infinite;
+}
+@keyframes dsaDashflow {
+  to {
+    stroke-dashoffset: -24;
+  }
 }
 
 /* ---------- Reduced motion ---------- */
@@ -172,7 +183,8 @@ body {
   .panel-enter,
   .animate-fade-in,
   .animate-slide-up,
-  .sheet-enter {
+  .sheet-enter,
+  .dsa-dashflow {
     animation: none;
   }
 }

@@ -60,6 +60,9 @@ import { aiRagTopics } from "./topics/ai-rag";
 import { aiLangchainTopics } from "./topics/ai-langchain";
 // NOTE: the "AI Agents" module (ai-agents.ts) is still pending — see TODO.txt.
 
+// ---- DSA Prep course ----
+import { dsaRecursionBacktrackingTopics } from "./topics/dsa-recursion-backtracking";
+
 // ============================================================
 // COURSES
 // Top level of the content hierarchy: Course → Section → Topic.
@@ -130,6 +133,14 @@ export const courses: CourseInfo[] = [
     icon: "Boxes",
     description: "Scalability, storage, caching, and distributed patterns.",
     sectionIds: ["sd-fundamentals", "sd-data", "sd-scaling"],
+  },
+  {
+    id: "dsa",
+    title: "DSA Prep",
+    icon: "Brain",
+    description:
+      "Coding-interview patterns for timed OAs — recursion & backtracking to start.",
+    sectionIds: ["dsa-recursion-backtracking"],
   },
 ];
 
@@ -446,6 +457,11 @@ export const sections: SectionInfo[] = [
     id: "langchain",
     title: "LangChain",
     topicIds: ["ai-langchain-basics", "ai-langchain-chains", "ai-langchain-memory"],
+  },
+  {
+    id: "dsa-recursion-backtracking",
+    title: "Recursion & Backtracking",
+    topicIds: ["rb-concept", "rb-subsets", "rb-combination-sum"],
   },
 ];
 
@@ -5173,4 +5189,7 @@ aws efs put-lifecycle-configuration \\
   ...aiLlmIntegrationTopics,
   ...aiRagTopics,
   ...aiLangchainTopics,
+
+  // ---- DSA Prep course ----
+  ...dsaRecursionBacktrackingTopics,
 ];

@@ -9,27 +9,27 @@ const config: Config = {
     extend: {
       colors: {
         bg: {
-          base: "#0f1419",
-          panel: "#1a2332",
-          card: "#1e2a3d",
-          hover: "#243349",
+          base: "#0A0E13",
+          panel: "#111823",
+          card: "#151D29",
+          hover: "#1A2431",
         },
         border: {
-          DEFAULT: "#2d3a4f",
-          strong: "#3d4d68",
+          DEFAULT: "#232D3C",
+          strong: "#2E3B4E",
         },
         accent: {
-          DEFAULT: "#ff9900",
-          hover: "#ffac33",
-          muted: "#cc7a00",
+          DEFAULT: "#7C8CF8",
+          hover: "#97A4FA",
+          muted: "#5E6FE0",
         },
-        success: "#10b981",
-        danger: "#ef4444",
-        warning: "#f59e0b",
+        success: "#2FD9C4",
+        danger: "#F0596B",
+        warning: "#F5A93F",
         text: {
-          primary: "#e6edf3",
-          secondary: "#b0bac6",
-          muted: "#8b949e",
+          primary: "#E9EEF4",
+          secondary: "#94A2B5",
+          muted: "#5D6C80",
         },
       },
       fontFamily: {

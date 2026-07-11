@@ -218,10 +218,10 @@ export default function DashboardPage() {
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart data={m.radar} outerRadius="72%">
-                  <PolarGrid stroke="#2d3a4f" />
-                  <PolarAngleAxis dataKey="domain" tick={{ fill: "#b0bac6", fontSize: 10 }} />
-                  <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: "#8b949e", fontSize: 9 }} axisLine={false} />
-                  <Radar name="Score" dataKey="score" stroke="#ff9900" fill="#ff9900" fillOpacity={0.25} />
+                  <PolarGrid stroke="#232D3C" />
+                  <PolarAngleAxis dataKey="domain" tick={{ fill: "#94A2B5", fontSize: 10 }} />
+                  <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: "#5D6C80", fontSize: 9 }} axisLine={false} />
+                  <Radar name="Score" dataKey="score" stroke="#7C8CF8" fill="#7C8CF8" fillOpacity={0.25} />
                 </RadarChart>
               </ResponsiveContainer>
             </div>
