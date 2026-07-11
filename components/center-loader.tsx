@@ -11,14 +11,16 @@ export function CenterLoader({
 }) {
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-bg-base/70 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4"
       role="status"
       aria-live="polite"
       aria-busy="true"
     >
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-bg-panel/95 px-8 py-6 shadow-2xl">
-        <Loader2 size={34} className="animate-spin text-accent" />
-        <div className="text-[13px] text-text-secondary">{label}</div>
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-[#e6dcc2] bg-[#faf5e6] px-8 py-6 shadow-2xl ring-1 ring-black/10 max-w-[calc(100vw-2rem)]">
+        <Loader2 size={34} className="animate-spin text-[#e8890c]" />
+        <div className="text-[13px] font-medium text-[#4a4230] text-center">
+          {label}
+        </div>
       </div>
     </div>
   );

@@ -14,6 +14,8 @@ export type RunResult = {
   result?: string;
   /** fatal error (exception, timeout, or runtime-load failure) */
   error?: string;
+  /** tabular result set (SQL queries) — rendered as an HTML table by the UI */
+  table?: { columns: string[]; rows: (string | number | null)[][] };
 };
 
 // ------------------------------------------------------------
@@ -224,5 +226,223 @@ export async function runPython(code: string): Promise<RunResult> {
     } catch {
       /* ignore */
     }
+  }
+}
+
+// ------------------------------------------------------------
+// SQL — sql.js (SQLite compiled to WASM), lazily loaded from CDN on first use.
+//
+// Real MySQL cannot run client-side (it's a client-server C++ engine with no
+// browser WASM build), so the in-browser engine is SQLite via sql.js — ~95%
+// syntax-compatible with MySQL for analyst-level SQL (SELECT/JOIN/GROUP BY/
+// HAVING/window functions/CTEs). Each run uses a FRESH in-memory database so
+// results are reproducible: the optional `setup` DDL is re-applied every time,
+// meaning a query block always sees a known schema regardless of run order.
+// ------------------------------------------------------------
+const SQLJS_VERSION = "1.12.0";
+const SQLJS_CDN = `https://cdn.jsdelivr.net/npm/sql.js@${SQLJS_VERSION}/dist`;
+
+type SqlValue = string | number | Uint8Array | null;
+type SqlExecResult = { columns: string[]; values: SqlValue[][] };
+type SqlDatabase = {
+  run: (sql: string) => void;
+  exec: (sql: string) => SqlExecResult[];
+  close: () => void;
+};
+type SqlJsStatic = { Database: new () => SqlDatabase };
+
+// Module-level cache: sql.js initializes once per session and is reused by
+// every subsequent SQL run.
+let sqlJsPromise: Promise<SqlJsStatic> | null = null;
+
+/** True once sql.js has begun (or finished) loading — used to decide whether
+ *  to show the one-time "Setting up SQL runtime…" modal. */
+export function isSqlReady(): boolean {
+  return sqlJsPromise !== null;
+}
+
+function injectSqlJsScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const w = window as unknown as { initSqlJs?: unknown };
+    if (w.initSqlJs) return resolve();
+
+    const existing = document.querySelector<HTMLScriptElement>(
+      "script[data-sqljs]"
+    );
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () =>
+        reject(new Error("Failed to load sql.js from CDN"))
+      );
+      return;
+    }
+
+    const s = document.createElement("script");
+    s.src = `${SQLJS_CDN}/sql-wasm.js`;
+    s.async = true;
+    s.setAttribute("data-sqljs", "true");
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Failed to load sql.js from CDN"));
+    document.head.appendChild(s);
+  });
+}
+
+function ensureSqlJs(): Promise<SqlJsStatic> {
+  if (sqlJsPromise) return sqlJsPromise;
+  sqlJsPromise = (async () => {
+    await injectSqlJsScript();
+    const initSqlJs = (
+      window as unknown as {
+        initSqlJs: (cfg: {
+          locateFile: (file: string) => string;
+        }) => Promise<SqlJsStatic>;
+      }
+    ).initSqlJs;
+    return initSqlJs({ locateFile: (file) => `${SQLJS_CDN}/${file}` });
+  })();
+  // On failure, clear the cache so the next Run can retry the load.
+  sqlJsPromise.catch(() => {
+    sqlJsPromise = null;
+  });
+  return sqlJsPromise;
+}
+
+/** Render a sql.js value for display: Uint8Array (BLOB) → placeholder, else pass through. */
+function normalizeSqlValue(v: SqlValue): string | number | null {
+  if (v === null) return null;
+  if (typeof v === "number" || typeof v === "string") return v;
+  return "[blob]";
+}
+
+type SqlTable = { columns: string[]; rows: (string | number | null)[][] };
+
+/** Execute `code` (after optional `setup`) in a fresh DB; return the last
+ *  rows-returning result set, or null for DDL/DML that returns nothing. */
+function execToTable(SQL: SqlJsStatic, code: string, setup?: string): SqlTable | null {
+  const db = new SQL.Database();
+  try {
+    if (setup && setup.trim()) db.run(setup);
+    const results = db.exec(code);
+    const last = [...results].reverse().find((r) => r.columns.length > 0);
+    if (!last) return null;
+    return {
+      columns: last.columns,
+      rows: last.values.map((row) => row.map(normalizeSqlValue)),
+    };
+  } finally {
+    try {
+      db.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Run SQL in a fresh in-browser SQLite database. `setup` (if given) is executed
+ * first — typically CREATE TABLE + INSERT — then `code` runs against it. The
+ * LAST statement that returns rows becomes the result `table`; statements that
+ * return no rows (DDL/INSERT/UPDATE) report a friendly stdout line instead.
+ */
+export async function runSql(code: string, setup?: string): Promise<RunResult> {
+  let SQL: SqlJsStatic;
+  try {
+    SQL = await ensureSqlJs();
+  } catch (err) {
+    return {
+      stdout: "",
+      stderr: "",
+      error:
+        err instanceof Error ? err.message : "Failed to load the SQL runtime.",
+    };
+  }
+
+  try {
+    const table = execToTable(SQL, code, setup);
+    if (!table) {
+      return {
+        stdout: "OK — statement executed (no rows returned).",
+        stderr: "",
+      };
+    }
+    return { stdout: "", stderr: "", table };
+  } catch (err) {
+    return {
+      stdout: "",
+      stderr: "",
+      error: err instanceof Error ? err.message || String(err) : String(err),
+    };
+  }
+}
+
+/** Normalize a result set to a comparable string form. Rows are compared as an
+ *  unordered multiset unless `orderMatters`. Cell values compared as strings. */
+function tableSignature(t: SqlTable, orderMatters: boolean): string {
+  const rowStrings = t.rows.map((r) =>
+    r.map((c) => (c === null ? " NULL" : String(c))).join("")
+  );
+  if (!orderMatters) rowStrings.sort();
+  // Column count matters (so "too many/few columns" is wrong) but not names,
+  // since learners may alias differently than the reference solution.
+  return `cols=${t.columns.length}${rowStrings.join("")}`;
+}
+
+export type CheckedRunResult = RunResult & {
+  /** true/false once judged; undefined when it couldn't be judged (user error,
+   *  or the exercise defines no solution). */
+  correct?: boolean;
+};
+
+/**
+ * Run a learner's SQL and judge correctness by comparing its result set to the
+ * reference `solution` query's result — both run against the same `setup` in
+ * separate fresh databases. Correctness is result-based, never text-based.
+ */
+export async function runSqlChecked(
+  code: string,
+  opts: { setup?: string; solution?: string; orderMatters?: boolean }
+): Promise<CheckedRunResult> {
+  let SQL: SqlJsStatic;
+  try {
+    SQL = await ensureSqlJs();
+  } catch (err) {
+    return {
+      stdout: "",
+      stderr: "",
+      error:
+        err instanceof Error ? err.message : "Failed to load the SQL runtime.",
+    };
+  }
+
+  // Run the learner's query.
+  let userTable: SqlTable | null;
+  try {
+    userTable = execToTable(SQL, code, opts.setup);
+  } catch (err) {
+    return {
+      stdout: "",
+      stderr: "",
+      error: err instanceof Error ? err.message || String(err) : String(err),
+    };
+  }
+
+  const base: RunResult = userTable
+    ? { stdout: "", stderr: "", table: userTable }
+    : { stdout: "OK — statement executed (no rows returned).", stderr: "" };
+
+  // Judge against the reference solution when one is provided and the learner's
+  // query actually produced a result set.
+  if (!opts.solution || !userTable) return base;
+  try {
+    const expected = execToTable(SQL, opts.solution, opts.setup);
+    if (!expected) return base; // solution returns no rows → nothing to compare
+    const orderMatters = !!opts.orderMatters;
+    const correct =
+      tableSignature(userTable, orderMatters) ===
+      tableSignature(expected, orderMatters);
+    return { ...base, correct };
+  } catch {
+    // A broken reference solution shouldn't block the learner.
+    return base;
   }
 }

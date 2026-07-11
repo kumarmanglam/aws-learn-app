@@ -14,6 +14,32 @@ export type Question = {
   options: [string, string, string, string];
   answer: "A" | "B" | "C" | "D";
   explanation: string;
+  /** Difficulty tier — used for a small badge; author questions easy→medium. */
+  difficulty?: "easy" | "medium" | "hard";
+};
+
+/**
+ * A hands-on "Try it" exercise (SQL courses). Each renders as its own editable
+ * code area with its own Run button and per-question progress tracking. The
+ * learner's query runs in-browser (sql.js); correctness is judged by comparing
+ * its result set to the reference `solution` query's result — never by text.
+ */
+export type TryItQuestion = {
+  /** Stable, globally-unique id (e.g. "sql-vs-excel-t1") — the tracking key. */
+  id: string;
+  /** The business question to solve. */
+  prompt: string;
+  difficulty: "easy" | "medium" | "hard";
+  /** Optional nudge shown behind a "Hint" toggle. */
+  hint?: string;
+  /** Schema + seed DDL run in a fresh DB before the learner's query. */
+  setup: string;
+  /** Pre-filled, editable starter SQL. */
+  starter: string;
+  /** Reference query whose result set defines the correct answer. */
+  solution: string;
+  /** Compare rows in order (default false → compared as an unordered multiset). */
+  orderMatters?: boolean;
 };
 
 export type CodeExample = {
@@ -22,6 +48,13 @@ export type CodeExample = {
   code: string;
   /** optional tab label when multiple examples appear together */
   tab?: string;
+  /**
+   * SQL-only: schema/seed DDL (CREATE TABLE + INSERT) run in a fresh in-memory
+   * database immediately before `code`. Lets several query tabs in one topic
+   * share the same tables without repeating the DDL inside every tab's visible
+   * `code`. Ignored by non-SQL runtimes.
+   */
+  setup?: string;
   /** Reference stdout shown instead of a Run button for non-runnable
    *  languages (e.g. Java). JS/Python execute in-browser and ignore this. */
   expectedOutput?: string;
@@ -123,6 +156,8 @@ export type Topic = {
   codeExamples?: CodeExample[];
   /** Legend rows shown below the architecture SVG. */
   diagramLegend?: DiagramLegendItem[];
+  /** Hands-on practice exercises rendered under the Code tab (SQL courses). */
+  tryIt?: TryItQuestion[];
 
   // ---- Optional DSA fields (only set by the DSA Prep course) ----
   /** Pattern pill in the topic header, e.g. "Backtracking". */

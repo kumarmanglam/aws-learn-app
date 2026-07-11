@@ -18,6 +18,7 @@ export type {
   QuickReference,
   Domain,
   Topic,
+  TryItQuestion,
   SectionInfo,
   CourseInfo,
 } from "./topics/shared";
@@ -59,6 +60,9 @@ import { aiLlmIntegrationTopics } from "./topics/ai-llm-integration";
 import { aiRagTopics } from "./topics/ai-rag";
 import { aiLangchainTopics } from "./topics/ai-langchain";
 // NOTE: the "AI Agents" module (ai-agents.ts) is still pending — see TODO.txt.
+
+// ---- SQL for Analytics & Finance course ----
+import { sqlFoundationsTopics } from "./topics/sql-foundations";
 
 // ---- DSA Prep course ----
 import { dsaRecursionBacktrackingTopics } from "./topics/dsa-recursion-backtracking";
@@ -133,6 +137,16 @@ export const courses: CourseInfo[] = [
     icon: "Boxes",
     description: "Scalability, storage, caching, and distributed patterns.",
     sectionIds: ["sd-fundamentals", "sd-data", "sd-scaling"],
+  },
+  {
+    id: "sql",
+    title: "SQL for Analytics & Finance",
+    icon: "Database",
+    description:
+      "SQL & MySQL for business analytics and finance — from zero, in the browser.",
+    // Sections 2–10 (querying, aggregation, joins, dates, financial calcs,
+    // subqueries/CTEs, cleaning, reporting, capstones) are appended as authored.
+    sectionIds: ["sql-foundations"],
   },
   {
     id: "dsa",
@@ -457,6 +471,17 @@ export const sections: SectionInfo[] = [
     id: "langchain",
     title: "LangChain",
     topicIds: ["ai-langchain-basics", "ai-langchain-chains", "ai-langchain-memory"],
+  },
+  // ---- SQL for Analytics & Finance course ----
+  {
+    id: "sql-foundations",
+    title: "Foundations — Why SQL, not Just Excel",
+    topicIds: [
+      "sql-what-is-db",
+      "sql-first-select",
+      "sql-engine-and-mysql-note",
+      "sql-vs-excel",
+    ],
   },
   {
     id: "dsa-recursion-backtracking",
@@ -5189,6 +5214,9 @@ aws efs put-lifecycle-configuration \\
   ...aiLlmIntegrationTopics,
   ...aiRagTopics,
   ...aiLangchainTopics,
+
+  // ---- SQL for Analytics & Finance course (1/10 sections — see plan) ----
+  ...sqlFoundationsTopics,
 
   // ---- DSA Prep course ----
   ...dsaRecursionBacktrackingTopics,

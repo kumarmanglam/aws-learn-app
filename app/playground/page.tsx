@@ -13,7 +13,9 @@ import {
 import {
   runJavaScript,
   runPython,
+  runSql,
   isPyodideReady,
+  isSqlReady,
   type RunResult,
 } from "@/lib/code-runner";
 import { CenterLoader } from "@/components/center-loader";
@@ -24,7 +26,7 @@ import { CenterLoader } from "@/components/center-loader";
 // loaded lazily on first Python run. No backend, no external execution API.
 // ============================================================
 
-type LangKey = "javascript" | "python";
+type LangKey = "javascript" | "python" | "sql";
 
 const LANGUAGES: { key: LangKey; label: string; file: string; template: string }[] =
   [
@@ -55,6 +57,29 @@ for i in range(10):
     print(f"fib({i}) = {fib(i)}")
 `,
     },
+    {
+      key: "sql",
+      label: "SQL",
+      file: "query.sql",
+      template: `-- SQLite (sql.js / WASM). ~95% MySQL-compatible.
+CREATE TABLE orders (
+  id       INTEGER PRIMARY KEY,
+  customer TEXT,
+  total    REAL
+);
+INSERT INTO orders (customer, total) VALUES
+  ('Acme Corp',   1200.00),
+  ('Beta Ltd',     450.50),
+  ('Acme Corp',    300.00),
+  ('Gamma Inc',    980.25);
+
+-- Revenue per customer, biggest first
+SELECT customer, SUM(total) AS revenue
+FROM orders
+GROUP BY customer
+ORDER BY revenue DESC;
+`,
+    },
   ];
 
 const TEMPLATES: Record<LangKey, string> = LANGUAGES.reduce(
@@ -70,6 +95,7 @@ export default function PlaygroundPage() {
   const [sources, setSources] = useState<Record<LangKey, string>>(TEMPLATES);
   const [running, setRunning] = useState(false);
   const [pyLoading, setPyLoading] = useState(false);
+  const [sqlLoading, setSqlLoading] = useState(false);
   const [output, setOutput] = useState<RunResult | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
@@ -80,7 +106,11 @@ export default function PlaygroundPage() {
   useEffect(() => {
     try {
       const savedLang = localStorage.getItem(STORAGE_LANG);
-      if (savedLang === "javascript" || savedLang === "python") {
+      if (
+        savedLang === "javascript" ||
+        savedLang === "python" ||
+        savedLang === "sql"
+      ) {
         setLanguage(savedLang);
       }
       const raw = localStorage.getItem(STORAGE_SOURCES);
@@ -117,6 +147,14 @@ export default function PlaygroundPage() {
     try {
       if (language === "javascript") {
         setOutput(await runJavaScript(sources.javascript));
+      } else if (language === "sql") {
+        const cold = !isSqlReady();
+        if (cold) setSqlLoading(true);
+        try {
+          setOutput(await runSql(sources.sql));
+        } finally {
+          if (cold) setSqlLoading(false);
+        }
       } else {
         const cold = !isPyodideReady();
         if (cold) setPyLoading(true);
@@ -161,7 +199,8 @@ export default function PlaygroundPage() {
     !output.stdout &&
     !output.stderr &&
     !output.error &&
-    output.result == null;
+    output.result == null &&
+    !output.table;
 
   return (
     <div className="h-screen flex flex-col bg-bg-base text-text-primary overflow-hidden">
@@ -180,7 +219,7 @@ export default function PlaygroundPage() {
           <div className="leading-tight hidden sm:block">
             <div className="text-sm font-semibold">Playground</div>
             <div className="text-[11px] text-text-muted">
-              Run JavaScript &amp; Python in your browser
+              Run JavaScript, Python &amp; SQL in your browser
             </div>
           </div>
         </div>
@@ -287,7 +326,12 @@ export default function PlaygroundPage() {
             <kbd className="font-mono px-1 py-0.5 rounded bg-bg-base border border-border">
               Ctrl/⌘ + Enter
             </kbd>{" "}
-            to run · {language === "python" ? "Pyodide (WASM)" : "sandboxed Web Worker"}
+            to run ·{" "}
+            {language === "python"
+              ? "Pyodide (WASM)"
+              : language === "sql"
+                ? "SQLite (sql.js / WASM)"
+                : "sandboxed Web Worker"}
           </div>
         </section>
 
@@ -323,6 +367,54 @@ export default function PlaygroundPage() {
             )}
             {!running && output && (
               <>
+                {output.table && (
+                  <div className="overflow-auto rounded border border-border mb-2">
+                    <table className="w-full border-collapse text-[12px]">
+                      <thead>
+                        <tr className="bg-bg-panel/60">
+                          {output.table.columns.map((c, i) => (
+                            <th
+                              key={i}
+                              className="text-left font-semibold text-accent px-2.5 py-1.5 border-b border-border whitespace-nowrap"
+                            >
+                              {c}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {output.table.rows.length === 0 && (
+                          <tr>
+                            <td
+                              colSpan={output.table.columns.length}
+                              className="px-2.5 py-2 text-text-muted italic"
+                            >
+                              (0 rows)
+                            </td>
+                          </tr>
+                        )}
+                        {output.table.rows.map((row, r) => (
+                          <tr key={r} className="odd:bg-white/[0.02]">
+                            {row.map((cell, c) => (
+                              <td
+                                key={c}
+                                className="px-2.5 py-1.5 border-b border-border/50 text-text-primary whitespace-nowrap"
+                              >
+                                {cell === null ? (
+                                  <span className="text-text-muted italic">
+                                    NULL
+                                  </span>
+                                ) : (
+                                  String(cell)
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 {output.stdout && (
                   <div className="text-text-primary">{output.stdout}</div>
                 )}
@@ -345,6 +437,7 @@ export default function PlaygroundPage() {
       </div>
 
       {pyLoading && <CenterLoader label="Setting up Python runtime…" />}
+      {sqlLoading && <CenterLoader label="Setting up SQL runtime…" />}
     </div>
   );
 }

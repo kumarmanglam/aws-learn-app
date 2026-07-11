@@ -21,6 +21,18 @@ export type QuizState = {
   };
 };
 
+/**
+ * "Try it" exercise progress, keyed by topicId → questionId. `attempted` flips
+ * true the first time the learner runs the exercise; `solved` is true once
+ * their query's result matches the reference solution. Tracking is intentionally
+ * low-stakes — it never gates course progress.
+ */
+export type TryItState = {
+  [topicId: string]: {
+    [questionId: string]: { attempted: boolean; solved: boolean };
+  };
+};
+
 // ---- date helpers (UTC to avoid TZ drift) ----
 export function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
