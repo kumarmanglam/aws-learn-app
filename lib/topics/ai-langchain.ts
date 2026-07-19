@@ -298,57 +298,57 @@ print(review.suggestion)   # typed str`,
       {
         q: "In LCEL, what does the pipe `|` operator do?",
         options: [
-          "A. Runs the components in parallel",
+          "A. Runs the wrapped components concurrently on the same input and merges their outputs",
           "B. Chains components sequentially — the output of the left becomes the input of the right",
-          "C. Creates a conditional branch between two chains",
-          "D. Spawns a subprocess for each component",
+          "C. Creates a conditional branch that routes the input to one of several sub-chains",
+          "D. Spawns a separate OS subprocess to run each component in isolation from the others",
         ],
         answer: "B",
         explanation:
-          "B is correct: the pipe composes runnables left to right, feeding each stage's output into the next, so `prompt | model | parser` sends the prompt's messages to the model and the model's reply to the parser. It is sequential, not parallel or conditional.",
+          "Composing runnables left to right feeds each stage's output into the next, so `prompt | model | parser` sends the prompt's messages to the model and the model's reply on to the parser. Sequential piping is neither concurrent execution, conditional routing, nor process spawning.",
       },
       {
         q: "What does `StrOutputParser()` produce from a chat model's response?",
         options: [
-          "A. A JSON object",
+          "A. A JSON object parsed from the model's reply",
           "B. The plain `.content` string extracted from the AIMessage",
-          "C. A validated Pydantic model",
-          "D. The raw HTTP response bytes",
+          "C. A validated Pydantic model built from the reply",
+          "D. The raw HTTP response bytes from the provider API",
         ],
         answer: "B",
         explanation:
-          "B is correct: StrOutputParser pulls the text content out of the AIMessage, giving you a plain string instead of the full message object. JSON/Pydantic come from structured parsers or with_structured_output.",
+          "Pulling the text content out of the AIMessage yields a plain string rather than the full message object. A JSON object or a validated Pydantic instance comes from structured parsers or with_structured_output, and the transport-level bytes are never surfaced here.",
       },
       {
         q: "You build `chain = prompt | model | parser` but no API call happens. Why?",
         options: [
-          "A. The model is misconfigured",
+          "A. The model object was misconfigured, so construction fails silently until fixed",
           "B. LCEL chains are lazy — composing describes the computation; you must call .invoke() (or .stream()/.batch()) to run it",
-          "C. StrOutputParser blocks execution",
-          "D. You forgot to import langchain-core",
+          "C. StrOutputParser blocks execution until an explicit flush call releases the pipeline",
+          "D. The langchain-core import is missing, so the pipe operator has no implementation",
         ],
         answer: "B",
         explanation:
-          "B is correct: constructing the pipe only builds a Runnable; nothing executes until you call .invoke(input), .stream(input), or .batch([...]). It is not a misconfiguration.",
+          "Constructing the pipe only builds a Runnable that describes the computation; nothing executes until you call .invoke(input), .stream(input), or .batch([...]). That laziness is by design — not a broken model, a blocking parser, or a missing import.",
       },
       {
         q: "Which package contains the base abstractions like LCEL, prompt templates, and the Runnable interface?",
         options: ["A. langchain", "B. langchain-community", "C. langchain-core", "D. langgraph"],
         answer: "C",
         explanation:
-          "C is correct: langchain-core holds the foundational primitives (Runnable, LCEL, prompts, parsers, message types). The langchain package adds higher-level chains/agents, and provider integrations live in packages like langchain-anthropic.",
+          "The foundational primitives — Runnable, LCEL, prompts, parsers, and message types — live in langchain-core. The higher-level langchain package adds chains and agents, community integrations sit in langchain-community, and langgraph is a separate library for stateful multi-actor graphs.",
       },
       {
         q: "What is the advantage of `model.with_structured_output(MyModel)` over parsing free-form text?",
         options: [
-          "A. It is always cheaper in tokens",
+          "A. It always costs fewer tokens than parsing the equivalent free-form reply",
           "B. It returns a typed, schema-validated object (via tool calling) instead of a raw string you must parse yourself",
-          "C. It skips calling the LLM entirely",
-          "D. It disables streaming",
+          "C. It resolves the answer from the schema locally and skips calling the model",
+          "D. It disables token streaming, forcing the full object to arrive in one response",
         ],
         answer: "B",
         explanation:
-          "B is correct: with_structured_output constrains the model (typically via tool calling) to return an instance of your Pydantic schema, giving typed, validated fields. It still calls the LLM and makes no guarantee about token cost.",
+          "Constraining the model — typically through tool calling — makes it return an instance of your Pydantic schema, giving typed, validated fields instead of a string you parse by hand. It still calls the model, makes no promise about token cost, and does not turn streaming off.",
       },
       {
         q: "How do you invoke a chain whose prompt has `{domain}` and `{question}` placeholders?",

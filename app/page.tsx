@@ -61,6 +61,7 @@ import {
   LayoutDashboard,
   KanbanSquare,
   Timer,
+  GraduationCap,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -901,6 +902,17 @@ function TopNav({
       </div>
 
       <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+        {/* dMAT Portal is a separate standalone app — opens in a new tab. */}
+        <a
+          href={process.env.NEXT_PUBLIC_DMAT_PORTAL_URL || "http://localhost:5173"}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="tip tip-bottom p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-accent"
+          data-tip="dMAT Portal (new tab)"
+          aria-label="Open the dMAT CS prep portal in a new tab"
+        >
+          <GraduationCap size={16} />
+        </a>
         <a
           href="/dashboard"
           className="tip tip-bottom p-2 rounded-md hover:bg-bg-hover text-text-muted hover:text-accent"
